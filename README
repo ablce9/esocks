@@ -1,0 +1,18 @@
+* socks5 proxy server
+
+ FEATURE(s):
+  * bypassing firewall rules
+
+ DEPENDENCIES:
+  * Libevent(http://libevent.org)
+  * OpenSSL
+  * Autotools - For building the app
+
+ BUILD
+  % aclocal && autoconf && automake --add-missing && ./configure && make
+
+ NOTE
+  * This repo is pretty much work in progress!
+
+ LICENSE
+  * See COPYING
