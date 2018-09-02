@@ -7,8 +7,8 @@
 
 // Symmetric encryption and decrytion.
 int
-evs_encrypt(const EVP_CIPHER *cipher, u8 *in, int ilen, u8 *key,
-	    u8 *iv, u8 *out)
+evs_encrypt(const EVP_CIPHER *cipher, u8 *out, u8 *in, int ilen, u8 *passwd, int plen, u8 *key,
+	    u8 *iv)
 {
   u8 *salt = NULL;
   const EVP_MD *dgst;
@@ -18,7 +18,7 @@ evs_encrypt(const EVP_CIPHER *cipher, u8 *in, int ilen, u8 *key,
   dgst = EVP_md5();
   ctx = EVP_CIPHER_CTX_new();
 
-  EVP_BytesToKey(cipher, dgst, salt, NULL, 0, 1, key, iv);
+  EVP_BytesToKey(cipher, dgst, salt, passwd, plen, 1, key, iv);
 
   if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 1))
     goto err;
@@ -43,18 +43,18 @@ evs_encrypt(const EVP_CIPHER *cipher, u8 *in, int ilen, u8 *key,
 }
 
 int
-evs_decrypt(const EVP_CIPHER *cipher, u8 *in, int ilen, u8 *key,
-	    u8 *iv, u8 *out)
+evs_decrypt(const EVP_CIPHER *cipher, u8 *out, u8 *in, int ilen, u8 *passwd, int plen, u8 *key,
+	    u8 *iv)
 {
   u8 *salt = NULL;
   const EVP_MD *dgst;
   EVP_CIPHER_CTX *ctx;
-  int len, plaintext_len;
+  int len, ciphertext_len;
 
   dgst = EVP_md5();
   ctx = EVP_CIPHER_CTX_new();
 
-  EVP_BytesToKey(cipher, dgst, salt, NULL, 0, 1, key, iv);
+  EVP_BytesToKey(cipher, dgst, salt, passwd, plen, 1, key, iv);
 
   if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0))
     goto err;
@@ -62,18 +62,18 @@ evs_decrypt(const EVP_CIPHER *cipher, u8 *in, int ilen, u8 *key,
   if (!EVP_DecryptUpdate(ctx, out, &len, in, ilen))
     goto err;
 
-  plaintext_len = len;
+  ciphertext_len = len;
 
-  if (!EVP_DecryptFinal_ex(ctx, in + len, &len))
+  if (!EVP_DecryptFinal_ex(ctx, out + len, &len))
     goto err;
 
-  plaintext_len += len;
+  ciphertext_len += len;
 
   EVP_CIPHER_CTX_free(ctx);
 
-  out[plaintext_len] = '\0';
+  out[ciphertext_len] = '\0';
 
-  return (plaintext_len);
+  return (ciphertext_len);
 
  err:
   fprintf(stderr, "error occurred\n");

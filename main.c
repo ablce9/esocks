@@ -9,6 +9,7 @@
  */
 
 #include "evs-internal.h"
+#include "crypto.h"
 #include "evs_log.h"
 #include "evs_server.h"
 
@@ -39,6 +40,11 @@ settings_init(void)
   settings.rate_wlimit = 20000;
   settings.rate_rlimit = 20000;
   settings.proxy = NULL;
+
+  // TODO: refactor
+  memcpy(settings.key, "012345678901234567890123456789012345678901234567", 48);
+  memcpy(settings.iv, "0123456789012345678901234567890123456789012345678901234567890123", 64);
+  settings.cipher_name = "aes-256-cfb";
 }
 
 static
@@ -51,6 +57,7 @@ void usage() {
 	 "  -u  server address\n"
 	 "  -j  server port\n"
 	 "  -k  password\n"
+	 "  -c  cipher name, defualt aes-256-cfb\n"
 	 "  -n  workers\n"
 	 "  -t  timeout for connections, default 300 seconds\n"
 	 "  -g  nameserver\n"
@@ -66,6 +73,11 @@ main(int argc, char **argv)
 {
   int cc = 0;
   int port;
+
+
+  // Init OpenSSL
+  // TODO: free all loaded memory
+  crypto_init();
 
   settings_init();
 
@@ -118,8 +130,13 @@ main(int argc, char **argv)
     case 'e':
       settings.rate_wlimit = atoi(optarg);
       break;
+    case 'c':
+      settings.cipher_name = optarg;
+      break;
     }
   }
+
+  settings.plen = strlen(settings.passphrase);
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 

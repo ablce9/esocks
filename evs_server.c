@@ -41,15 +41,13 @@ static void pass_through_func(evutil_socket_t sig_flag, short what, void *ctx);
 static void listen_func(evutil_socket_t, short, void*);
 static void accept_func(evutil_socket_t, short, void*);
 static void socks_initcb(struct bufferevent *bev, void *ctx);
-static void socks_readcb(struct bufferevent *bev, void *ctx);
+static void parse_header_cb(struct bufferevent *bev, void *ctx);
 static void next_readcb(struct bufferevent *bev, void *ctx);
 static void print_address(struct sockaddr *, int type, const char *ctx);
 static void event_logger(short what, struct ev_context_s *ctx);
 static void unchoke_writecb(struct bufferevent *bev, void *ctx);
 static void dns_logfn(int is_warn, const char *msg);
 static struct ev_context_s *ev_new_context(void);
-static int encrypt__(u8 *in, int ilen, u8 *out);
-static int decrypt__(u8 *in, int ilen, u8 *out);
 const char * _getprogname(void) { return "esocks"; }
 
 void
@@ -63,6 +61,10 @@ run_srv(void)
   int fd;
   void *proxy = NULL;
   int socktype = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+
+  // Init OpenSSL
+  // TODO: free all loaded memory
+  crypto_init();
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
@@ -189,6 +191,8 @@ run_srv(void)
   event_base_free(base);
   evdns_base_free(dns_base, 0);
   lru_purge_all(&node);
+  crypto_shutdown();
+
   exit(0);
 
  err:
@@ -202,34 +206,36 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
   int new_fd;
   socklen_t addrlen;
 
-  while (1) {
-    struct sockaddr_storage ss;
-    addrlen = sizeof(ss);
-    new_fd = accept(fd, (struct sockaddr*)&ss, &addrlen);
+  while (1)
+    {
+      struct sockaddr_storage ss;
+      addrlen = sizeof(ss);
+      new_fd = accept(fd, (struct sockaddr*)&ss, &addrlen);
 
-    if (new_fd < 0)
-      break;
+      if (new_fd < 0)
+	break;
 
-    if (addrlen == 0) {
-      /* This can happen with some older linux kernels in
-       * response to nmap. */
-      evutil_closesocket(new_fd);
-      continue;
+      if (addrlen == 0)
+	{
+	  /* This can happen with some older linux kernels in
+	   * response to nmap. */
+	  evutil_closesocket(new_fd);
+	  continue;
+	}
+
+      if (fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1) {
+	evutil_closesocket(new_fd);
+	log_warn("fcntl, F_SETFD");
+      }
+
+      if (evutil_make_socket_nonblocking(fd) < 0)
+	log_warn("socket_nonblocking");
+
+      accept_func(new_fd, what, ctx);
     }
-
-    if (fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1) {
-      evutil_closesocket(new_fd);
-      log_warn("fcntl, F_SETFD");
-    }
-
-    if (evutil_make_socket_nonblocking(fd) < 0)
-      log_warn("socket_nonblocking");
-
-    accept_func(new_fd, what, ctx);
-  }
 
   if (fd == EAGAIN || fd == EWOULDBLOCK || fd == ECONNABORTED || fd == EINTR)
-      log_warn("fd error code=%d", fd);
+    log_warn("fd error code=%d", fd);
 }
 
 static struct ev_context_s *
@@ -239,17 +245,18 @@ ev_new_context(void)
 
   s = calloc(1, sizeof(struct ev_context_s));
 
-  if (s != NULL) {
-    s->bev = NULL;
-    s->partner = NULL;
-    s->sin = NULL;
-    s->sin6 = NULL;
-    s->addrs = NULL;
-    s->addrs = 0;
-    s->st = 0;
-    s->reversed = false;
-    s->event_handler = NULL;
-  }
+  if (s != NULL)
+    {
+      s->bev = NULL;
+      s->partner = NULL;
+      s->sin = NULL;
+      s->sin6 = NULL;
+      s->addrs = NULL;
+      s->addrs = 0;
+      s->st = 0;
+      s->reversed = false;
+      s->event_handler = NULL;
+    }
 
   return s;
 }
@@ -259,7 +266,7 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
 {
   struct bufferevent *bev, *partner;
   struct ev_context_s *context;
-    struct timeval tval = {settings.timeout, 0};
+  struct timeval tval = {settings.timeout, 0};
 
   bev = bufferevent_socket_new(base, fd,
 			       BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
@@ -289,30 +296,32 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
     print_address((struct sockaddr*)&sin->sin_addr, AF_INET, "connect to");
 
     if (bufferevent_socket_connect(context->partner, (struct sockaddr*)sin,
-				   sizeof(struct sockaddr_in)) != 0) {
-      DEBUG ? log_ex(1, "connect: failed to connect")
-	: log_e("failed to connect");
+				   sizeof(struct sockaddr_in)) != 0)
+      {
+	DEBUG ? log_ex(1, "connect: failed to connect")
+	  : log_e("failed to connect");
 
-      context->st = ev_destroy;
-      bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
-    }
+	context->st = ev_destroy;
+	bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
+      }
 
-    if (context->st == ev_init) {
-      // local server directly goes to streamcb.
-      // We want local server to run as fast as it can, so let's this as sharp as
-      // can be!
-      context->st = ev_connected;
-      evs_setcb_for_local(bev, context);
+    if (context->st == ev_init)
+      {
+	// local server directly goes to streamcb.
+	// We want local server to run as fast as it can, so let's this as sharp as
+	// can be!
+	context->st = ev_connected;
+	evs_setcb_for_local(bev, context);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+      }
+
+  } else
+    {
+      context->event_handler = (bufferevent_data_cb*)handle_streamcb;
+      bufferevent_setcb(bev, socks_initcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
-
     }
-
-  } else {
-
-    context->event_handler = (bufferevent_data_cb*)handle_streamcb;
-    bufferevent_setcb(bev, socks_initcb, NULL, eventcb, context);
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
-  }
 
 }
 
@@ -372,15 +381,15 @@ static void
 event_logger(short what, struct ev_context_s *ctx)
 {
   log_d(DEBUG, "reversed=%s status=%d domain=%s event=%s %s %s %s %s %s",
-	    ctx->reversed ? "true" : "false",
-	    ctx->st,
-	    ctx->domain,
-	    (what & BEV_EVENT_READING  ) ? "ev_reading": "",
-	    (what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
-	    (what & BEV_EVENT_EOF      ) ? "ev_eof": "",
-	    (what & BEV_EVENT_ERROR    ) ? "ev_error": "",
-	    (what & BEV_EVENT_TIMEOUT  ) ? "ev_timeout": "",
-	    (what & BEV_EVENT_CONNECTED) ? "ev_connected": "");
+	ctx->reversed ? "true" : "false",
+	ctx->st,
+	ctx->domain,
+	(what & BEV_EVENT_READING  ) ? "ev_reading": "",
+	(what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
+	(what & BEV_EVENT_EOF      ) ? "ev_eof": "",
+	(what & BEV_EVENT_ERROR    ) ? "ev_error": "",
+	(what & BEV_EVENT_TIMEOUT  ) ? "ev_timeout": "",
+	(what & BEV_EVENT_CONNECTED) ? "ev_connected": "");
 }
 
 static void
@@ -389,26 +398,36 @@ socks_initcb(struct bufferevent *bev, void *ctx)
   struct evbuffer *src = bufferevent_get_input(bev);
   struct ev_context_s *context = ctx;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size];
+  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE], enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  int outl;
 
+  // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  if (buf[0] == 5) {
-    // Frist negotiation
-    u8 p[2] = {5, 0};
-    if (bufferevent_write(bev, p, 2) != 0) {
-      log_e("bufferevent_write");
-      destroycb(bev, context);
-      return;
-    }
+  decrypt_(buf, buf_size, dec_buf);
 
-    context->st = ev_init;
+  if (dec_buf[0] == 5)
+    {
+      // Frist negotiation
+      // enc
+      u8 p[2] = {5, 0};
 
-    bufferevent_setcb(bev, socks_readcb, NULL, eventcb, context);
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
+      outl = encrypt_(p, 2, enc_buf);
 
-  } else
+      if (bufferevent_write(bev, enc_buf, outl) != 0)
+	{
+	  log_e("bufferevent_write");
+	  destroycb(bev, context);
+	  return;
+	}
+
+      context->st = ev_init;
+
+      bufferevent_setcb(bev, parse_header_cb, NULL, eventcb, context);
+      bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+    } else
     destroycb(bev, context);
 }
 
@@ -419,7 +438,7 @@ enum {
 } socks_cmd_e;
 
 static void
-socks_readcb(struct bufferevent *bev, void *ctx)
+parse_header_cb(struct bufferevent *bev, void *ctx)
 {
   struct sockaddr_in sin;
   struct evbuffer *src = bufferevent_get_input(bev);
@@ -428,146 +447,166 @@ socks_readcb(struct bufferevent *bev, void *ctx)
   size_t buf_size = evbuffer_get_length(src), dlen, buflen;
   int res, try;
   u8 buf[buf_size], portbuf[2], buf4[4],
-    domain[256], resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
+    domain[256], resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0},
+    dec_buf[SOCKS_MAX_BUFFER_SIZE];
   u16 port;
   char tmp4[SOCKS_INET_ADDRSTRLEN];
   lru_node_t *cached;
+  int outl;
 
   // Todo: Support ipv6
   static const char fmt4[] = "%d.%d.%d.%d";
   u8 msg[2] = {5, 1};
+
+  // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
+  outl = decrypt_(buf, buf_size, dec_buf);
+
   /* Check if version is correct and context is equal to INIT */
-  if (context->st == ev_init && buf[0] == SOCKS_VERSION) {
-    /* parse socks header */
-    switch (buf[1]) {
-    case c_connect:
-    case c_bind:
-      break;
-    case udpassoc:
-      log_warn("udp associate is WIP");
-      context->st = ev_destroy;
-      break;
-    default:
-      log_warn("unkonw cmd=%d", buf[1]);
-      context->st = ev_destroy;
-      // bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
-      bufferevent_write(bev, msg, 2);
-      bufferevent_disable(bev, EV_WRITE);
+  if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
+    {
+      /* parse socks header */
+      switch (dec_buf[1]) {
+      case c_connect:
+      case c_bind:
+	break;
+      case udpassoc:
+	log_warn("udp associate is not supported");
+	context->st = ev_destroy;
+	break;
+      default:
+	log_warn("unkonw command=%d", dec_buf[1]);
+	context->st = ev_destroy;
+	// bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
+	bufferevent_write(bev, msg, 2);
+	bufferevent_disable(bev, EV_WRITE);
+      }
     }
-  }
 
   if (context->st != ev_init) return;
 
   // Connect to the server
-  switch(buf[3]) {
+  switch(dec_buf[3])
+    {
 
-  case IPV4:
-    memcpy(buf4, buf + 4, sizeof(buf4));
-    evutil_snprintf(tmp4, sizeof(tmp4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
-    memset(&sin, 0, sizeof(sin));
-    res = evutil_inet_pton(AF_INET, (char*)tmp4, &sin.sin_addr);
+    case IPV4:
+      memcpy(buf4, dec_buf + 4, sizeof(buf4));
+      evutil_snprintf(tmp4, sizeof(tmp4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
 
-    if (res != 1) {
-      log_e("failed to resolve addr");
-      destroycb(bev, context);
-      return;
-    }
+      memset(&sin, 0, sizeof(sin));
+      res = evutil_inet_pton(AF_INET, (char*)tmp4, &sin.sin_addr);
 
-    memcpy(portbuf, buf + 8, 2);
-    port = portbuf[0] << 8 | portbuf[1];
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
+      if (res != 1)
+	{
+	  log_e("failed to resolve addr");
+	  destroycb(bev, context);
+	  return;
+	}
 
-    print_address((struct sockaddr*)&sin.sin_addr, AF_INET, NULL);
+      memcpy(portbuf, dec_buf + 8, 2);
+      port = portbuf[0] << 8 | portbuf[1];
+      sin.sin_family = AF_INET;
+      sin.sin_port = htons(port);
 
-    if (bufferevent_socket_connect(partner, (struct sockaddr*)&sin,
-				   sizeof(struct sockaddr_in)) != 0) {
-      log_e("connect: failed to connect");
+      print_address((struct sockaddr*)&sin.sin_addr, AF_INET, NULL);
+
+      if (bufferevent_socket_connect(partner, (struct sockaddr*)&sin,
+				     sizeof(struct sockaddr_in)) != 0)
+	{
+	  log_e("connect: failed to connect");
+	  resp[1] = 4;
+
+	  // enc
+	  if (bufferevent_write(bev, resp, 10) != 0)
+	    {
+	      destroycb(bev, context);
+	      return;
+	    }
+	}
+
+      context->st = ev_connected;
+
+      log_i("IPv4: connect immediate");
+      break;
+    case IPV6:
+      log_e("IPv6 is not supported yet");
       resp[1] = 4;
-      if (bufferevent_write(bev, resp, 10) != 0) {
-	destroycb(bev, context);
-	return;
-      }
-    }
+      // enc
+      if (bufferevent_write(bev, resp, 10) != 0)
+	{
+	  destroycb(bev, context);
+	  return;
+	}
+      break;
+    case DOMAINN:
+      dlen = (u8) dec_buf[4];
+      buflen = (int) dlen + 5;
 
-    context->st = ev_connected;
+      // Get port info first
+      memcpy(portbuf, dec_buf + buflen, 2);
+      port = portbuf[0]<<8 | portbuf[1];
 
-    log_i("v4 connect immediate");
-    break;
-  case IPV6:
-    log_e("WIP and not supported yet");
-    resp[1] = 4;
-    if (bufferevent_write(bev, resp, 10) != 0) {
-      destroycb(bev, context);
-      return;
-    }
-    break;
-  case DOMAINN:
-    dlen = (u8) buf[4];
-    buflen = (int) dlen + 5;
+      // Get a name bytes sequence
+      memset(domain, 0, dlen);
+      memcpy(domain, dec_buf + 5, dlen);
 
-    // Get port info first
-    memcpy(portbuf, buf + buflen, 2);
-    port = portbuf[0]<<8 | portbuf[1];
+      ev_copy(context->domain, (char*)&domain, dlen);
 
-    // Get a name bytes sequence
-    memset(domain, 0, dlen);
-    memcpy(domain, buf + 5, dlen);
+      context->port = htons(port);
+      context->st = ev_dns_wip;
 
-    ev_copy(context->domain, (char*)&domain, dlen);
+      cached = lru_get_node(&node, context->domain, (lru_cmp_func*)strcmp);
+      if (cached)
+	{
+	  log_d(DEBUG, "cached: \"%s\"", context->domain);
 
-    context->port = htons(port);
-    context->st = ev_dns_wip;
+	  socks_addr_t* addrinfo = (socks_addr_t*)cached->payload_ptr;
 
-    cached = lru_get_node(&node, context->domain, (lru_cmp_func*)strcmp);
-    if (cached)
-      {
-	log_d(DEBUG, "cached: \"%s\"", context->domain);
+	  // Start to connect to a server.
+	  for (try = 0; try < addrinfo->naddrs; try++) {
+	    struct sockaddr_in ssin;
+	    memset(&ssin, 0, sizeof(ssin));
+	    memcpy(&ssin, addrinfo[try].sockaddr, addrinfo[try].socklen);
+	    ssin.sin_family = AF_INET;
+	    ssin.sin_port = context->port;
 
-	socks_addr_t* addrinfo = (socks_addr_t*)cached->payload_ptr;
+	    if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&ssin,
+					   sizeof(struct sockaddr_in)) != 0)
+	      ; // Pass and try next address
 
-	// Start to connect to a server.
-	for (try = 0; try < addrinfo->naddrs; try++) {
-	  struct sockaddr_in ssin;
-	  memset(&ssin, 0, sizeof(ssin));
-	  memcpy(&ssin, addrinfo[try].sockaddr, addrinfo[try].socklen);
-	  ssin.sin_family = AF_INET;
-	  ssin.sin_port = context->port;
+	    else {
+	      context->st = ev_connected;
+	      break;
+	    }
 
-	  if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&ssin,
-					 sizeof(struct sockaddr_in)) != 0)
-	    ; // Pass and try next address
-
-	  else {
-	    context->st = ev_connected;
-	    break;
 	  }
 
 	}
+      else
+	resolve(context);
 
-    }
-    else
-      resolve(context);
-
-    break;
-  default:
-    log_warn("strange command=%d", buf[3]);
-    context->st = ev_destroy;
-  }
-
-  if (context->st == ev_connected) {
-
-    if (bufferevent_write(bev, resp, 10) < 0) {
-      destroycb(bev, context);
-      return;
+      break;
+    default:
+      log_warn("strange command=%d", buf[3]);
+      context->st = ev_destroy;
     }
 
-    bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
-  }
+  if (context->st == ev_connected)
+    {
+      u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+      outl = encrypt_(resp, 10, enc_buf);
+
+      if (bufferevent_write(bev, enc_buf, outl) < 0)
+	{
+	  destroycb(bev, context);
+	  return;
+	}
+
+      bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
+      bufferevent_enable(bev, EV_READ|EV_WRITE);
+    }
 
 }
 
@@ -594,17 +633,22 @@ next_readcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->partner;
   struct evbuffer *src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size];
+  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];;
+  int outl;
 
   if (context->st == ev_connected && buf_size) {
     evbuffer_copyout(src, buf, buf_size);
     evbuffer_drain(src, buf_size);
 
-    if (bufferevent_write(partner, buf, buf_size) < 0) {
-      log_e("bufferevent_write");
-      destroycb(bev, context);
-      return;
-    }
+    outl = decrypt_(buf, buf_size, dec_buf);
+
+    // dec
+    if (bufferevent_write(partner, dec_buf, outl) < 0)
+      {
+	log_e("bufferevent_write");
+	destroycb(bev, context);
+	return;
+      }
 
     context->reversed = true;
     context->st = ev_connected;
@@ -622,36 +666,44 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev), *dst;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size];
+  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  int outl;
 
-  if (partner == NULL) {
-    evbuffer_drain(src, buf_size);
-    return;
-  }
-
-  evbuffer_copyout(src, buf, buf_size);
-  evbuffer_drain(src, buf_size);
-
-  if (context->st == ev_connected && buf_size && context->partner) {
-    if (bufferevent_write(partner, buf, buf_size) != 0) {
-      log_e("failed to write");
-      destroycb(partner, context);
+  if (!partner || !buf_size)
+    {
+      evbuffer_drain(src, buf_size);
       return;
     }
 
-    // Keep doing proxy until there is no data
-    bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
+  // dec
+  evbuffer_copyout(src, buf, buf_size);
+  evbuffer_drain(src, buf_size);
 
-    dst = bufferevent_get_output(partner);
+  outl = encrypt_(buf, buf_size, dec_buf);
 
-    if (evbuffer_get_length(dst) >= MAX_OUTPUT) {
-      log_d(DEBUG, "Setting watermark bufsize=%ld", evbuffer_get_length(dst));
-      bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb, context);
-      bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
-      bufferevent_disable(bev, EV_READ);
+  if (context->st == ev_connected && buf_size && context->partner)
+    {
+      if (bufferevent_write(partner, dec_buf, outl) != 0)
+	{
+	  log_e("failed to write");
+	  destroycb(partner, context);
+	  return;
+	}
+
+      // Keep doing proxy until there is no data
+      bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
+      bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+      dst = bufferevent_get_output(partner);
+
+      if (evbuffer_get_length(dst) >= MAX_OUTPUT)
+	{
+	  log_d(DEBUG, "Setting watermark bufsize=%ld", evbuffer_get_length(dst));
+	  bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb, context);
+	  bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
+	  bufferevent_disable(bev, EV_READ);
+	}
     }
-  }
 }
 
 void
@@ -681,89 +733,93 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
   // Send out 10 bytes to reply OK!
   u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
 
-  if (errcode != 0 || ai == NULL) {
-    log_e("%s:%s", context->domain, evutil_gai_strerror(errcode));
-    goto failed;
-  }
-
-  if (context->st == ev_dns_wip) {
-
-    for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
-      switch(ai_p->ai_family) {
-      case AF_INET:
-      case AF_INET6:
-	break;
-      default:
-	continue;
-      }
-      i++;
-    }
-
-    if (i == 0)
+  if (errcode != 0 || ai == NULL)
+    {
+      log_e("%s:%s", context->domain, evutil_gai_strerror(errcode));
       goto failed;
-
-    context->addrs = malloc(i * sizeof(socks_addr_t));
-    if (context->addrs != NULL)
-      log_warn("malloc");
-
-    context->addrs->naddrs = i;
-
-    for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
-      if (ai_p->ai_family != AF_INET)
-	continue;
-
-      sin_p = malloc(sizeof(struct sockaddr_in));
-    if (context->addrs != NULL)
-      log_warn("malloc");
-
-      memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
-
-      sin_p->sin_port = context->port;
-      sin_p->sin_family = AF_INET;
-
-      context->addrs[i].sockaddr = (struct sockaddr*)sin_p;
-      context->addrs[i].socklen = ai_p->ai_addrlen;
-
-      i++;
     }
 
-    log_i("connect to %s", context->domain);
+  if (context->st == ev_dns_wip)
+    {
 
-    context->st = ev_dns_ok;
+      for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
+	switch(ai_p->ai_family) {
+	case AF_INET:
+	case AF_INET6:
+	  break;
+	default:
+	  continue;
+	}
+	i++;
+      }
 
-    // Start to connect to a server.
-    for (try = 0; try < i; try++) {
-      struct sockaddr_in sin;
-      memset(&sin, 0, sizeof(sin));
-      memcpy(&sin, context->addrs[try].sockaddr, context->addrs[try].socklen);
-      sin.sin_family = AF_INET;
-      sin.sin_port = context->port;
+      if (i == 0)
+	goto failed;
 
-      if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&sin,
-				     sizeof(struct sockaddr_in)) != 0)
-	; // Pass til have a conn
+      context->addrs = malloc(i * sizeof(socks_addr_t));
+      if (!context->addrs)
+	log_warn("malloc");
 
-      else
-	break;
+      context->addrs->naddrs = i;
+
+      for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
+	if (ai_p->ai_family != AF_INET)
+	  continue;
+
+	sin_p = malloc(sizeof(struct sockaddr_in));
+	if (!context->addrs)
+	  log_warn("malloc");
+
+	memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
+
+	sin_p->sin_port = context->port;
+	sin_p->sin_family = AF_INET;
+
+	context->addrs[i].sockaddr = (struct sockaddr*)sin_p;
+	context->addrs[i].socklen = ai_p->ai_addrlen;
+
+	i++;
+      }
+
+      log_i("connect to %s", context->domain);
+
+      context->st = ev_dns_ok;
+
+      // Start to connect to a server.
+      for (try = 0; try < i; try++) {
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	memcpy(&sin, context->addrs[try].sockaddr, context->addrs[try].socklen);
+	sin.sin_family = AF_INET;
+	sin.sin_port = context->port;
+
+	if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&sin,
+				       sizeof(struct sockaddr_in)) != 0)
+	  ; // Pass til have a conn
+
+	else
+	  break;
+      }
+
+      if (node != NULL)
+	lru_insert_left(&node, (const char*)context->domain,
+			context->addrs, sizeof(context->addrs));
+
     }
 
-    if (node != NULL)
-      lru_insert_left(&node, (const char*)context->domain,
-		      context->addrs, sizeof(context->addrs));
+  if (context->st == ev_dns_ok)
+    {
 
-  }
+      context->st = ev_connected;
 
-  if (context->st == ev_dns_ok) {
+      if (context->bev != NULL)
+	{
+	  bufferevent_write(context->bev, resp, 10);
+	  bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
+	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
+	}
 
-    context->st = ev_connected;
-
-    if (context->bev != NULL) {
-      bufferevent_write(context->bev, resp, 10);
-      bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
-      bufferevent_enable(context->bev, EV_READ|EV_WRITE);
     }
-
-  }
 
   if (ai)
     evutil_freeaddrinfo(ai);
@@ -791,7 +847,8 @@ close_on_finished_writecb(struct bufferevent *bev, void *ctx)
   struct evbuffer *evb = bufferevent_get_output(bev);
   struct ev_context_s *context = ctx;
 
-  if (evbuffer_get_length(evb) == 0) {
+  if (evbuffer_get_length(evb) ==
+      0) {
     bufferevent_free(bev);
     context->st = ev_freed;
     log_d(DEBUG, "close_on_finished_writecb");
@@ -889,30 +946,28 @@ print_address(struct sockaddr *buf, int type, const char *ctx)
   log_warn("no address found");
 }
 
-static int
-encrypt__(u8 *in, int ilen, u8 *out)
+int
+encrypt_(u8 *in, int ilen, u8 *out)
 {
   const EVP_CIPHER *cipher;
-  int ret;
 
   cipher = EVP_get_cipherbyname(settings.cipher_name);
-  ASSERT(!cipher);
+  ASSERT(cipher != NULL);
 
-  ret = evs_encrypt(cipher, in, ilen, settings.key, settings.iv, out);
+  return evs_encrypt(cipher, out, in, ilen,
+		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
-  return ret;
 }
 
-static int
-decrypt__(u8 *in, int ilen, u8 *out)
+int
+decrypt_(u8 *in, int ilen, u8 *out)
 {
-  const EVP_CIPHER *decipher;
-  int ret;
+  const EVP_CIPHER *cipher;
 
-  decipher = EVP_get_cipherbyname(settings.cipher_name);
-  ASSERT(!decipher);
+  cipher = EVP_get_cipherbyname(settings.cipher_name);
+  ASSERT(cipher != NULL);
 
-  ret = evs_decrypt(decipher, in, ilen, settings.key, settings.iv, out);
+  return evs_decrypt(cipher, out, in, ilen,
+		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
-  return ret;
 }

@@ -1,15 +1,24 @@
 #include <event2/dns.h>
 
-#include <openssl/evp.h>
-#include <openssl/err.h>
-
 #include "./evs-internal.h"
 #include "./evs_server.h"
 #include "./evs_lru.h"
 #include "./evs_helper.h"
 #include "./crypto.h"
 
-static void announce(int ok_or_fail, const char *msg, va_list ap)
+static void
+test_setting_init(void)
+{
+  settings.passphrase = "my password";
+  settings.plen = strlen(settings.passphrase);
+  settings.cipher_name = "aes-256-cfb";
+
+  memcpy(settings.key, "01234567890123456789012345678901", 32);
+  memcpy(settings.iv, "0123456789012345", 16);
+}
+
+static void
+announce(int ok_or_fail, const char *msg, va_list ap)
 {
   char buf[1024];
   char *status = ok_or_fail == 0 ? "ok" : "failed";
@@ -344,31 +353,27 @@ static
 void test_crypto(void)
 {
   const EVP_CIPHER *cipher, *decipher;
-  u8 key[EVP_MAX_KEY_LENGTH], iv[EVP_MAX_IV_LENGTH],
-    ciphertext[SOCKS_MAX_BUFFER_SIZE],
+  u8 ciphertext[SOCKS_MAX_BUFFER_SIZE],
     plaintext[64] =
     "0123456789012345678901234567890123456789012345678901234567890123",
     *plaintext_copy;
-
   int ciphertext_len;
 
-  crypto_init();
-
-  memcpy(key, "012345678901234567890123456789012345678901234567", 48);
-  memcpy(iv, "0123456789012345678901234567890123456789012345678901234567890123", 64);
   plaintext_copy = (unsigned char*)strndup((char*)plaintext, 64);
 
-  cipher = EVP_get_cipherbyname("aes-256-cfb");
-  decipher = EVP_get_cipherbyname("aes-256-cfb");
-  assert(cipher && decipher);
+  cipher = EVP_get_cipherbyname(settings.cipher_name);
+  decipher = EVP_get_cipherbyname(settings.cipher_name);
+  assert(cipher != NULL && decipher != NULL);
 
-  ciphertext_len = evs_encrypt(cipher, plaintext, 64, key, iv, ciphertext);
+  ciphertext_len = evs_encrypt(cipher, ciphertext, plaintext, 64,
+			       (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
   test_ok("ciphertext_len=%d", ciphertext_len);
 
   u8 decrypted_text[ciphertext_len];
 
-  evs_decrypt(decipher, ciphertext, ciphertext_len, key, iv, decrypted_text);
+  evs_decrypt(decipher, decrypted_text, ciphertext, ciphertext_len,
+	      (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
   if (!strcmp((const char*)plaintext_copy,
 	      (const char*)decrypted_text))
@@ -376,6 +381,30 @@ void test_crypto(void)
   else
     test_failed("doesn't match");
 
+  free(plaintext_copy);
+}
+
+static
+void test_wrapped_crypto(void)
+{
+  u8 plaintext[64] = "0123456789012345678901234567890123456789012345678901234567890123",
+    enc_buf[SOCKS_MAX_BUFFER_SIZE],
+    dec_buf[SOCKS_MAX_BUFFER_SIZE],
+    *plaintext_copy;
+  int outl;
+
+  plaintext_copy = (u8*)strndup((char*)plaintext, 64);
+  outl = encrypt_(plaintext, 64, enc_buf);
+
+  decrypt_(enc_buf, outl, dec_buf);
+
+  if (!strcmp((const char*)plaintext_copy,
+	      (const char*)dec_buf))
+    test_ok("decrypted=%s",&dec_buf);
+  else
+    test_failed("doesn't match outl=\"%s\"", &dec_buf);
+
+  free(plaintext_copy);
 }
 
 typedef void(*test_function)(void);
@@ -393,6 +422,7 @@ struct testcase testcases[] = {
   {"test_event_cb", test_event_cb},
   {"test_resolve_cb", test_resolve_cb},
   {"test_crypto", test_crypto},
+  {"test_wrapped_crypto", test_wrapped_crypto},
 };
 
 int
@@ -400,10 +430,15 @@ main(int argc, char **argv)
 {
   int total_tests, current;
 
+  crypto_init();
+  test_setting_init();
+
   total_tests = (int)sizeof(testcases)/sizeof(testcases[0]);
   for (current = 0; current < total_tests; current++)
     {
       testcases[current].function();
     }
+
+  crypto_shutdown();
   return 0;
 }
