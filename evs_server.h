@@ -3,22 +3,6 @@
 
 #include "evs_helper.h"
 
-typedef struct {
-  struct socksaddr_in  *proxy;
-  struct timeval       *timeout;
-  const char           *srv_addr;
-  short                srv_port;
-  const char           *server_addr;
-  short                server_port;
-  const char           *password;
-  const char           *worker;
-  int                  rl;
-  const char           *nameserver;
-  const char           *resolv_conf;
-  int                  rate_rlimit;
-  int                  rate_wlimit;
-} srv_conf_t;
-
 struct dns_cache_config {
   struct lru_node_s  *cache;
   long               timeout;
@@ -42,15 +26,13 @@ typedef enum {
   ev_left,
 } socks_status_e;
 
-
 struct ev_context_s {
-  struct bufferevent     *bev;
-  struct bufferevent     *partner;
-  struct sockaddr_in     *sin;
-  struct sockaddr_in6    *sin6;
-  bufferevent_data_cb *event_handler;
-  socks_addr_t           *addrs;
-  int                     naddrs;
+  struct bufferevent      *bev;
+  struct bufferevent      *partner;
+  struct sockaddr_in      *sin;
+  struct sockaddr_in6     *sin6;
+  bufferevent_data_cb     *event_handler;
+  socks_addr_t            *addrs;
   short                   port;
   char                    domain[256];
   socks_status_e          st;

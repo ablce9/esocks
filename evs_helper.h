@@ -26,10 +26,6 @@ typedef struct socks_name_s {
   struct sockaddr    *sa;
 } socks_name_t;
 
-struct entry_s {
-  struct socks_name_s *name;
-};
-
 #ifdef HAVE_GETADDRINFO
 int resolve_host(socks_name_t *);
 #endif

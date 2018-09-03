@@ -452,7 +452,6 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   u16 port;
   char tmp4[SOCKS_INET_ADDRSTRLEN];
   lru_node_t *cached;
-  int outl;
 
   // Todo: Support IPv6
   static const char fmt4[] = "%d.%d.%d.%d";
@@ -462,7 +461,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  outl = decrypt_(buf, buf_size, dec_buf);
+  decrypt_(buf, buf_size, dec_buf);
 
   /* Check if version is correct and status is equal to INIT */
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
@@ -597,7 +596,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   if (context->st == ev_connected)
     {
       u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-      outl = encrypt_(resp, 10, enc_buf);
+      int outl = encrypt_(resp, 10, enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) < 0)
 	{
