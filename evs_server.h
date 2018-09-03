@@ -32,7 +32,7 @@ struct ev_context_s {
   struct sockaddr_in      *sin;
   struct sockaddr_in6     *sin6;
   bufferevent_data_cb     *event_handler;
-  socks_addr_t            *addrs;
+  socks_addr_t            *socks_addr;
   short                   port;
   char                    domain[256];
   socks_status_e          st;

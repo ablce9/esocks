@@ -164,7 +164,7 @@ test_lru_timeout_handler(void)
   struct sockaddr_in *sin;
   struct dns_cache_config config;
 
-  socks_addr_t *addrs; // Put addrinfo here
+  socks_addr_t *sock_addr; // Put addrinfo here
   int err, i;
   char *hostname = "client-event-reporter.twitch.tv";
   char *port = "443";
@@ -205,8 +205,11 @@ test_lru_timeout_handler(void)
   if (i == 0)
     test_failed("evutil_getaddrinfo");
 
-  addrs = malloc(i * sizeof(socks_addr_t));
-  assert(addrs != NULL);
+  sock_addr = calloc(1, sizeof(socks_addr_t));
+  assert(sock_addr != NULL);
+
+  sock_addr->addrs = malloc(i * sizeof(socks_addr_t));
+  assert(sock_addr->addrs != NULL);
 
   for (i = 0, p = res; p != NULL; p = p->ai_next) {
     if (p->ai_family != AF_INET)
@@ -219,17 +222,17 @@ test_lru_timeout_handler(void)
 
     sin->sin_family = AF_INET;
 
-    addrs[i].sockaddr = (struct sockaddr*)sin;
-    addrs[i].socklen = p->ai_addrlen;
+    sock_addr->addrs[i].sockaddr = (struct sockaddr*)sin;
+    sock_addr->addrs[i].socklen = p->ai_addrlen;
 
     i++;
   }
 
   // Total resolved address number
-  addrs->naddrs = i;
+  sock_addr->naddrs = i;
 
   // Insert target data here
-  lru_insert_left(&config.cache, hostname, addrs, sizeof(addrs));
+  lru_insert_left(&config.cache, hostname, sock_addr, sizeof(sock_addr));
   usleep(1100000);
 
   event_base_dispatch(base);
@@ -284,15 +287,17 @@ test_resolve_cb(void)
 
   resolvecb(err, res, ctx);
 
-  assert(ctx->addrs->naddrs > 0);
+  assert(ctx->socks_addr->naddrs > 0);
   assert(ctx->st == ev_connected);
 
   bufferevent_free(ctx->partner);
 
-  for (i = 0; i < ctx->addrs->naddrs-1; i++)
-    free(ctx->addrs[i].sockaddr);
+  // -1 because IPv6 is not malloced.
+  for (i = 0; i < ctx->socks_addr->naddrs-1; i++)
+    free(ctx->socks_addr->addrs[i].sockaddr);
 
-  free(ctx->addrs);
+  free(ctx->socks_addr->addrs);
+  free(ctx->socks_addr);
   free(ctx);
   event_base_dispatch(base);
   event_base_free(base);
@@ -364,8 +369,6 @@ void test_crypto(void)
   plaintext_copy = (unsigned char*)strndup((char*)plaintext, 64);
 
   cipher = EVP_get_cipherbyname(settings.cipher_name);
-  // decipher = EVP_get_cipherbyname(settings.cipher_name);
-  // assert(cipher != NULL && decipher != NULL);
 
   ciphertext_len = evs_encrypt(cipher, settings.dgst, ciphertext, plaintext, 64,
 			       (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);

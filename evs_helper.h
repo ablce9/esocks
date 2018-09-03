@@ -6,15 +6,18 @@
 #endif
 
 #include "evs-internal.h"
-#include "evs_lru.h"
-
 #include <sys/socket.h>
 
+#include "evs_lru.h"
 
-typedef struct {
+struct socks_addr {
   struct sockaddr *sockaddr;
   socklen_t       socklen;
-  int             naddrs;
+};
+
+typedef struct {
+  struct socks_addr  *addrs;
+  int                naddrs;
 } socks_addr_t;
 
 typedef struct socks_name_s {

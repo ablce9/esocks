@@ -250,8 +250,8 @@ ev_new_context(void)
       s->partner = NULL;
       s->sin = NULL;
       s->sin6 = NULL;
-      s->addrs = NULL;
-      s->addrs = 0;
+      s->socks_addr = NULL;
+      s->socks_addr->naddrs = 0;
       s->st = 0;
       s->reversed = false;
       s->event_handler = NULL;
@@ -362,10 +362,12 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
       if (context != NULL)
 	{
 	  log_d(DEBUG, "free context %s", context->domain);
+	  log_d(DEBUG, "context->st %d", context->st);
 
-	  context->reversed ?
-	    bufferevent_free(context->partner) :
-	    bufferevent_free(context->bev);
+	  if (context->st != 0 && context->st != ev_freed)
+	    context->reversed ?
+	      bufferevent_free(context->partner):
+	      bufferevent_free(context->bev);
 
 	  context->st = 0;
 	  context->partner = NULL;
@@ -568,7 +570,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	  for (try = 0; try < addrinfo->naddrs; try++) {
 	    struct sockaddr_in ssin;
 	    memset(&ssin, 0, sizeof(ssin));
-	    memcpy(&ssin, addrinfo[try].sockaddr, addrinfo[try].socklen);
+	    memcpy(&ssin, addrinfo->addrs[try].sockaddr, addrinfo->addrs[try].socklen);
 	    ssin.sin_family = AF_INET;
 	    ssin.sin_port = context->port;
 
@@ -734,6 +736,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
   struct sockaddr_in *sin_p;
   struct ev_context_s *context = ptr;
   struct evutil_addrinfo *ai_p;
+  socks_addr_t *socks_addr;
   int i, try;
   // Send out 10 bytes to reply OK!
   u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
@@ -761,18 +764,22 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
       if (i == 0)
 	goto failed;
 
-      context->addrs = malloc(i * sizeof(socks_addr_t));
-      if (!context->addrs)
+      socks_addr = calloc(1, sizeof(socks_addr_t));
+      if (!socks_addr)
+	log_warn("calloc");
+
+      socks_addr->addrs = malloc(i * sizeof(socks_addr_t));
+      if (!socks_addr->addrs)
 	log_warn("malloc");
 
-      context->addrs->naddrs = i;
+      socks_addr->naddrs = i;
 
       for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
 	if (ai_p->ai_family != AF_INET)
 	  continue;
 
 	sin_p = malloc(sizeof(struct sockaddr_in));
-	if (!context->addrs)
+	if (!sin_p)
 	  log_warn("malloc");
 
 	memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
@@ -780,8 +787,8 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	sin_p->sin_port = context->port;
 	sin_p->sin_family = AF_INET;
 
-	context->addrs[i].sockaddr = (struct sockaddr*)sin_p;
-	context->addrs[i].socklen = ai_p->ai_addrlen;
+	socks_addr->addrs[i].sockaddr = (struct sockaddr*)sin_p;
+	socks_addr->addrs[i].socklen = ai_p->ai_addrlen;
 
 	i++;
       }
@@ -789,12 +796,15 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
       log_i("connect to %s", context->domain);
 
       context->st = ev_dns_ok;
+      context->socks_addr = socks_addr;
 
       // Start to connect to a server.
       for (try = 0; try < i; try++) {
 	struct sockaddr_in sin;
 	memset(&sin, 0, sizeof(sin));
-	memcpy(&sin, context->addrs[try].sockaddr, context->addrs[try].socklen);
+	memcpy(&sin, context->socks_addr->addrs[try].sockaddr,
+	       context->socks_addr->addrs[try].socklen);
+
 	sin.sin_family = AF_INET;
 	sin.sin_port = context->port;
 
@@ -808,7 +818,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       if (node != NULL)
 	lru_insert_left(&node, (const char*)context->domain,
-			context->addrs, sizeof(context->addrs));
+			context->socks_addr, sizeof(context->socks_addr));
 
     }
 
@@ -852,12 +862,17 @@ close_on_finished_writecb(struct bufferevent *bev, void *ctx)
   struct evbuffer *evb = bufferevent_get_output(bev);
   struct ev_context_s *context = ctx;
 
-  if (evbuffer_get_length(evb) ==
-      0) {
-    bufferevent_free(bev);
-    context->st = ev_freed;
-    log_d(DEBUG, "close_on_finished_writecb");
-  }
+  if (evbuffer_get_length(evb) == 0)
+    {
+      bufferevent_free(bev);
+      context->st = ev_freed;
+      context->partner = NULL;
+      context->bev = NULL;
+      // To avoid double free, make sure a context becomes NULL.
+      context = NULL;
+      free(context);
+      log_d(DEBUG, "close_on_finished_writecb");
+    }
 }
 
 void
@@ -903,17 +918,19 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
 	  addrinfo = (socks_addr_t*)lru_get_oldest_payload(&config->cache,
 							   config->timeout);
 
-	  if (addrinfo) {
-	    for (i = 0; i < addrinfo->naddrs; i++) {
-	      free(addrinfo[i].sockaddr);
-	      addrinfo[i].sockaddr = NULL;
+	  if (addrinfo)
+	    {
+	      for (i = 0; i < addrinfo->naddrs; i++) {
+		free(addrinfo->addrs[i].sockaddr);
+		addrinfo->addrs[i].sockaddr = NULL;
+	      }
+
+	      free(addrinfo->addrs);
+	      free(addrinfo);
+	      addrinfo = NULL;
+	      log_d(DEBUG, "sweeping dns cache");
 	    }
-
-	    free(addrinfo);
-	    addrinfo = NULL;
-
-	    log_d(DEBUG, "sweeping dns cache");
-	  } else
+	  else
 	    break;
 
 	}
