@@ -12,6 +12,8 @@ test_setting_init(void)
   settings.passphrase = "my password";
   settings.plen = strlen(settings.passphrase);
   settings.cipher_name = "aes-256-cfb";
+  settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
+  settings.dgst = EVP_md5();
 
   memcpy(settings.key, "01234567890123456789012345678901", 32);
   memcpy(settings.iv, "0123456789012345", 16);
@@ -352,7 +354,7 @@ test_event_cb(void)
 static
 void test_crypto(void)
 {
-  const EVP_CIPHER *cipher, *decipher;
+  const EVP_CIPHER *cipher; // , *decipher;
   u8 ciphertext[SOCKS_MAX_BUFFER_SIZE],
     plaintext[64] =
     "0123456789012345678901234567890123456789012345678901234567890123",
@@ -362,17 +364,17 @@ void test_crypto(void)
   plaintext_copy = (unsigned char*)strndup((char*)plaintext, 64);
 
   cipher = EVP_get_cipherbyname(settings.cipher_name);
-  decipher = EVP_get_cipherbyname(settings.cipher_name);
-  assert(cipher != NULL && decipher != NULL);
+  // decipher = EVP_get_cipherbyname(settings.cipher_name);
+  // assert(cipher != NULL && decipher != NULL);
 
-  ciphertext_len = evs_encrypt(cipher, ciphertext, plaintext, 64,
+  ciphertext_len = evs_encrypt(cipher, settings.dgst, ciphertext, plaintext, 64,
 			       (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
   test_ok("ciphertext_len=%d", ciphertext_len);
 
   u8 decrypted_text[ciphertext_len];
 
-  evs_decrypt(decipher, decrypted_text, ciphertext, ciphertext_len,
+  evs_decrypt(cipher, settings.dgst, decrypted_text, ciphertext, ciphertext_len,
 	      (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
   if (!strcmp((const char*)plaintext_copy,

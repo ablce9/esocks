@@ -370,9 +370,9 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	  context->st = 0;
 	  context->partner = NULL;
 	  context->bev = NULL;
-	  free(context);
 	  // To avoid double free, make sure a context becomes NULL.
 	  context = NULL;
+	  free(context);
 	}
     }
 }
@@ -637,27 +637,28 @@ next_readcb(struct bufferevent *bev, void *ctx)
   u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
-  if (context->st == ev_connected && buf_size) {
-    evbuffer_copyout(src, buf, buf_size);
-    evbuffer_drain(src, buf_size);
+  if (context->st == ev_connected && buf_size)
+    {
+      evbuffer_copyout(src, buf, buf_size);
+      evbuffer_drain(src, buf_size);
 
-    outl = decrypt_(buf, buf_size, dec_buf);
+      outl = decrypt_(buf, buf_size, dec_buf);
 
-    // dec
-    if (bufferevent_write(partner, dec_buf, outl) < 0)
-      {
-	log_e("bufferevent_write");
-	destroycb(bev, context);
-	return;
-      }
+      // dec
+      if (bufferevent_write(partner, dec_buf, outl) < 0)
+	{
+	  log_e("bufferevent_write");
+	  destroycb(bev, context);
+	  return;
+	}
 
-    context->reversed = true;
-    context->st = ev_connected;
+      context->reversed = true;
+      context->st = ev_connected;
 
-    /* set callbacks and wait for server response */
-    bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
-    bufferevent_enable(partner, EV_WRITE|EV_READ);
-  }
+      /* set callbacks and wait for server response */
+      bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
+      bufferevent_enable(partner, EV_WRITE|EV_READ);
+    }
 }
 
 void
@@ -667,7 +668,7 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev), *dst;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size], dec_or_enc_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   if (!partner || !buf_size)
@@ -676,15 +677,19 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
       return;
     }
 
-  // dec
+  // dec or enc
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  outl = encrypt_(buf, buf_size, dec_buf);
+  if (settings.proxy)
+    outl = decrypt_(buf, buf_size, dec_or_enc_buf);
+
+  else
+    outl = encrypt_(buf, buf_size, dec_or_enc_buf);
 
   if (context->st == ev_connected && buf_size && context->partner)
     {
-      if (bufferevent_write(partner, dec_buf, outl) != 0)
+      if (bufferevent_write(partner, dec_or_enc_buf, outl) != 0)
 	{
 	  log_e("failed to write");
 	  destroycb(partner, context);
@@ -950,25 +955,14 @@ print_address(struct sockaddr *buf, int type, const char *ctx)
 int
 encrypt_(u8 *in, int ilen, u8 *out)
 {
-  const EVP_CIPHER *cipher;
-
-  cipher = EVP_get_cipherbyname(settings.cipher_name);
-  ASSERT(cipher != NULL);
-
-  return evs_encrypt(cipher, out, in, ilen,
+  return evs_encrypt(settings.cipher, settings.dgst, out, in, ilen,
 		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
-
 }
 
 int
 decrypt_(u8 *in, int ilen, u8 *out)
 {
-  const EVP_CIPHER *cipher;
-
-  cipher = EVP_get_cipherbyname(settings.cipher_name);
-  ASSERT(cipher != NULL);
-
-  return evs_decrypt(cipher, out, in, ilen,
+  return evs_decrypt(settings.cipher, settings.dgst, out, in, ilen,
 		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
 
 }

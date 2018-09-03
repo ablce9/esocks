@@ -43,7 +43,7 @@ settings_init(void)
 
   // TODO: refactor
   memcpy(settings.key, "012345678901234567890123456789012345678901234567", 48);
-  memcpy(settings.iv, "0123456789012345678901234567890123456789012345678901234567890123", 64);
+  memcpy(settings.iv, "0123456789012345", 15);
   settings.cipher_name = "aes-256-cfb";
 }
 
@@ -63,7 +63,7 @@ void usage() {
 	 "  -g  nameserver\n"
 	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
 	 "  -r  limit reading rate in bytes, default none\n"
-	 "  -w  limit rate in bytes, default none\n"
+	 "  -w  limit writing rate in bytes, default none\n"
 	 );
   exit(1);
 }
@@ -74,7 +74,6 @@ main(int argc, char **argv)
   int cc = 0;
   int port;
 
-
   // Init OpenSSL
   // TODO: free all loaded memory
   crypto_init();
@@ -82,7 +81,7 @@ main(int argc, char **argv)
   settings_init();
 
   while (cc != -1) {
-    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:");
+    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:");
 
     switch(cc) {
     case 's':
@@ -137,17 +136,22 @@ main(int argc, char **argv)
   }
 
   settings.plen = strlen(settings.passphrase);
+  settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
+  settings.dgst = EVP_md5();
+
+  if (settings.cipher == NULL)
+    log_ex(1, "Setting cipher %s", settings.cipher_name);
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 
   if (settings.relay_mode)
     log_i("%s:%d and connect to %s:%d",
 	  settings.srv_addr, settings.srv_port, settings.server_addr, settings.server_port);
-
-  else {
-    log_i("%s:%d", settings.srv_addr, settings.srv_port);
-    log_d(DEBUG, "running in debug mode, timeout=%d seconds", settings.timeout);
-  }
+  else
+    {
+      log_i("%s:%d", settings.srv_addr, settings.srv_port);
+      log_d(DEBUG, "running in debug mode, timeout=%d seconds", settings.timeout);
+    }
 
   (void)run_srv();
 

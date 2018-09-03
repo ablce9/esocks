@@ -21,7 +21,7 @@ log_ex(int eval, const char *fmt, ...)
   va_list ap;
 
   va_start(ap, fmt);
-  log_output(SOCKS_LOG_ERROR, strerror(errno), fmt, ap);
+  log_output(SOCKS_LOG_ERROR, NULL, fmt, ap);
   va_end(ap);
   exit(eval);
 }

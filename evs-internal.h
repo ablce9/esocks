@@ -70,10 +70,12 @@ struct settings {
   const char           *resolv_conf;
   int                  rate_rlimit;
   int                  rate_wlimit;
-  const char          *cipher_name;
+  const char           *cipher_name;
+  const EVP_MD         *dgst;
+  const EVP_CIPHER     *cipher;
   u8                   iv[EVP_MAX_IV_LENGTH];
   u8                   key[EVP_MAX_KEY_LENGTH];
-  const char          *passphrase;
+  const char           *passphrase;
   int                  plen;
 };
 
