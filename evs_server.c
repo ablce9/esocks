@@ -1,6 +1,4 @@
 /*
- * Watch out - this is a work in progress!
- *
  * Use of this source code is governed by a
  * license that can be found in the LICENSE file.
  *
@@ -145,43 +143,44 @@ run_srv(void)
 			   EV_READ|EV_PERSIST, listen_func, NULL);
   event_add(listen_event, NULL);
 
-  if (!settings.proxy) {
+  if (!settings.proxy)
+    {
 
-    struct event *handle_dns_cache;
+      struct event *handle_dns_cache;
 
-    memset(&cache_config, 0, sizeof(struct dns_cache_config));
+      memset(&cache_config, 0, sizeof(struct dns_cache_config));
 
-    log_i("start DNS service");
+      log_i("start DNS service");
 
-    // Start asynchronous dns services
-    dns_base = evdns_base_new(base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
-    if (dns_base == NULL)
-      log_ex(1, "end_base_new");
+      // Start asynchronous dns services
+      dns_base = evdns_base_new(base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+      if (dns_base == NULL)
+	log_ex(1, "end_base_new");
 
-    if (DEBUG)
-      evdns_set_log_fn(dns_logfn);
+      if (DEBUG)
+	evdns_set_log_fn(dns_logfn);
 
-    // Configure nameservers
-    if (settings.nameserver)
-      log_ex(1, "failed to add nameserver(s)");
+      // Configure nameservers
+      if (settings.nameserver)
+	log_ex(1, "failed to add nameserver(s)");
 
-    if (evdns_base_resolv_conf_parse(dns_base,
-				     DNS_OPTION_NAMESERVERS, settings.resolv_conf) < 0)
-      log_ex(1, "evdns_base_resolv_conf_parse");
+      if (evdns_base_resolv_conf_parse(dns_base,
+				       DNS_OPTION_NAMESERVERS, settings.resolv_conf) < 0)
+	log_ex(1, "evdns_base_resolv_conf_parse");
 
-    node = init_lru();
-    ASSERT(node != NULL);
+      node = init_lru();
+      ASSERT(node != NULL);
 
-    cache_config.cache = node;
-    cache_config.timeout = (long) dns_cache_tval.tv_sec;
+      cache_config.cache = node;
+      cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
-    // Clean dns cache with timeout
-    handle_dns_cache = event_new(base, -1,
-				 EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
-				 (void*)&cache_config);
+      // Clean dns cache with timeout
+      handle_dns_cache = event_new(base, -1,
+				   EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
+				   (void*)&cache_config);
 
-    event_add(handle_dns_cache, &dns_cache_tval);
-  }
+      event_add(handle_dns_cache, &dns_cache_tval);
+    }
 
   event_base_dispatch(base);
 
@@ -336,29 +335,29 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 
   if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT))
     {
+      if (partner != NULL)
+	{
+	  /* Flush leftover */
+	  (*(bufferevent_data_cb)context->event_handler)(bev, ctx);
 
-      if (partner != NULL) {
-	/* Flush leftover */
-	(*(bufferevent_data_cb)context->event_handler)(bev, ctx);
+	  if (evbuffer_get_length(bufferevent_get_output(partner)))
+	    {
+	      log_d(DEBUG, "set to close_on_finished_writecb");
+	      context->st = ev_freed;
+	      bufferevent_setcb(partner, NULL,
+				close_on_finished_writecb, eventcb, context);
+	      bufferevent_disable(partner, EV_READ);
+	    }
+	  else
+	    {
+	      /* We have nothing left to say to the other
+	       * spide; close it! */
+	      log_d(DEBUG, "nothing to write and let partner go");
+	      bufferevent_free(partner);
+	      context->st = ev_freed;
+	    }
 
-	if (evbuffer_get_length(bufferevent_get_output(partner)))
-	  {
-	    log_d(DEBUG, "set to close_on_finished_writecb");
-	    context->st = ev_freed;
-	    bufferevent_setcb(partner, NULL,
-			      close_on_finished_writecb, eventcb, context);
-	    bufferevent_disable(partner, EV_READ);
-	  }
-	else
-	  {
-	    /* We have nothing left to say to the other
-	     * spide; close it! */
-	    log_d(DEBUG, "nothing to write and let partner go");
-	    bufferevent_free(partner);
-	    context->st = ev_freed;
-	  }
-
-      }
+	}
 
       if (context != NULL)
 	{
@@ -371,8 +370,9 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	  context->st = 0;
 	  context->partner = NULL;
 	  context->bev = NULL;
-	  context = NULL;
 	  free(context);
+	  // To avoid double free, make sure a context becomes NULL.
+	  context = NULL;
 	}
     }
 }
@@ -454,7 +454,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   lru_node_t *cached;
   int outl;
 
-  // Todo: Support ipv6
+  // Todo: Support IPv6
   static const char fmt4[] = "%d.%d.%d.%d";
   u8 msg[2] = {5, 1};
 
@@ -464,10 +464,10 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
   outl = decrypt_(buf, buf_size, dec_buf);
 
-  /* Check if version is correct and context is equal to INIT */
+  /* Check if version is correct and status is equal to INIT */
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
     {
-      /* parse socks header */
+      /* Parse socks header */
       switch (dec_buf[1]) {
       case c_connect:
       case c_bind:
@@ -480,6 +480,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	log_warn("unkonw command=%d", dec_buf[1]);
 	context->st = ev_destroy;
 	// bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
+	// enc
 	bufferevent_write(bev, msg, 2);
 	bufferevent_disable(bev, EV_WRITE);
       }
@@ -633,7 +634,7 @@ next_readcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->partner;
   struct evbuffer *src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];;
+  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   if (context->st == ev_connected && buf_size) {

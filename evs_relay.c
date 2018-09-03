@@ -23,36 +23,36 @@ fast_streamcb(struct bufferevent *bev, void *ctx)
   u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
-  if (!partner || !buf_size) {
-    evbuffer_drain(src, buf_size);
-    return;
-  }
-
-  if (context->st == ev_connected && buf_size && context->partner) {
-
-    // enc
-    evbuffer_copyout(src, buf, buf_size);
-    evbuffer_drain(src, buf_size);
-
-    outl = encrypt_(buf, buf_size, enc_buf);
-
-    if (bufferevent_write(partner, enc_buf, outl) != 0)
-      log_e("failed to write");
-    // TODO:
-    //   set up some cbs
-    // bufferevent_setcb(bev, NULL, err_writecb, __eventcb, failed);
-
-    else {
-
-      context->reversed = true;
-      context->st = ev_connected;
-
-      // dec
-      // Keep doing proxy until there is no data
-      bufferevent_setcb(partner, next_fast_streamcb, NULL, eventcb, context);
-      bufferevent_enable(partner, EV_READ|EV_WRITE);
+  if (!partner || !buf_size)
+    {
+      evbuffer_drain(src, buf_size);
+      return;
     }
-  }
+
+  if (context->st == ev_connected && buf_size && context->partner)
+    {
+      // enc
+      evbuffer_copyout(src, buf, buf_size);
+      evbuffer_drain(src, buf_size);
+
+      outl = encrypt_(buf, buf_size, enc_buf);
+
+      if (bufferevent_write(partner, enc_buf, outl) != 0)
+	log_e("failed to write");
+      // TODO:
+      //   set up some cbs
+      // bufferevent_setcb(bev, NULL, err_writecb, __eventcb, failed);
+
+      else
+	{
+	  context->reversed = true;
+	  context->st = ev_connected;
+
+	  // Keep doing proxy until there is no data
+	  bufferevent_setcb(partner, next_fast_streamcb, NULL, eventcb, context);
+	  bufferevent_enable(partner, EV_READ|EV_WRITE);
+	}
+    }
 }
 
 static void
