@@ -52,7 +52,7 @@ test_failed(const char *fmt, ...)
 }
 
 static void
-test_lru__payload(void)
+test_lru_payload(void)
 {
   lru_node_t *node, *current;
   struct payload_s x, y, z;
@@ -420,12 +420,12 @@ struct testcase {
 };
 
 struct testcase testcases[] = {
-  {"test_lru_lrupayload", test_lru__payload},
+  {"test_lru_lrupayload", test_lru_payload},
   {"test_lru_validate_tail", test_lru_validate_tail},
   {"test_lru_remove_node",test_lru_remove_node},
-  {"test_lru_timeout_handler", test_lru_timeout_handler},
   {"test_event_cb", test_event_cb},
   {"test_resolve_cb", test_resolve_cb},
+  {"test_lru_timeout_handler", test_lru_timeout_handler},
   {"test_crypto", test_crypto},
   {"test_wrapped_crypto", test_wrapped_crypto},
 };

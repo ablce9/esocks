@@ -251,7 +251,6 @@ ev_new_context(void)
       s->sin = NULL;
       s->sin6 = NULL;
       s->socks_addr = NULL;
-      s->socks_addr->naddrs = 0;
       s->st = 0;
       s->reversed = false;
       s->event_handler = NULL;
