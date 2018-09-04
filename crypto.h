@@ -17,8 +17,8 @@
     ERR_free_strings(); } while(0)
 
 int evs_encrypt(const EVP_CIPHER *cipher, const EVP_MD *dgst, u8 *out, u8 *in, int ilen,
-		u8 *passwd, int plen, u8 *key, u8 *iv);
+		const u8 *passwd, int plen, const u8 *key, const u8 *iv);
 int evs_decrypt(const EVP_CIPHER *cipher, const EVP_MD *dgst, u8 *out, u8 *in, int ilen,
-		u8 *passwd, int plen, u8 *key, u8 *iv);
+		const u8 *passwd, int plen, const u8 *key, const u8 *iv);
 
 #endif
