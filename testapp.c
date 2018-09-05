@@ -6,24 +6,41 @@
 #include "./evs_helper.h"
 #include "./crypto.h"
 
+#define MEMCMP(a, b, s)	  \
+  do { if (!memcmp(a, b, s))				\
+      test_ok("matched: %s", __func__);	\
+    else test_failed("doesn't match: %s", __func__);    \
+} while(0);
+
 static void
 test_setting_init(void)
 {
-  settings.passphrase = "my password";
-  settings.plen = strlen(settings.passphrase);
+  const u8 key16[16] = {
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
+  };
+  const u8 ckey32[32] = {
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12,
+    0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
+    0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56
+  };
+
+  settings.passphrase = (u8*)"this is my password!";
+  settings.plen = strlen((char*)settings.passphrase);
   settings.cipher_name = "aes-256-cfb";
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
   settings.dgst = EVP_md5();
 
-  memcpy(settings.key, "01234567890123456789012345678901", 32);
-  memcpy(settings.iv, "0123456789012345", 16);
+  settings.key = key16;
+  settings.iv = ckey32;
 }
 
 static void
 announce(int ok_or_fail, const char *msg, va_list ap)
 {
   char buf[1024];
-  char *status = ok_or_fail == 0 ? "ok" : "failed";
+  char *status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m" : "\033[00;31mfailed\033[00;00m";
 
   evutil_vsnprintf(buf, sizeof(buf), msg, ap);
 
@@ -95,6 +112,7 @@ test_lru_payload(void)
   assert(lru_get_tail(&node) != NULL);
 
   lru_purge_all(&node);
+  test_ok("%s", __func__);
 }
 
 void
@@ -129,6 +147,7 @@ test_lru_validate_tail(void)
   assert(strcmp(node->prev->key, (const char*)"buz") == 0);
 
   lru_purge_all(&node);
+  test_ok("%s", __func__);
 }
 
 void
@@ -151,6 +170,7 @@ test_lru_remove_node(void)
   assert(lru_get_tail(&node)->key == (const char*)"doo");
 
   lru_purge_all(&node);
+  test_ok("%s", __func__);
 }
 
 static void
@@ -242,6 +262,7 @@ test_lru_timeout_handler(void)
   event_free(handler);
   event_base_free(base);
   lru_purge_all(&config.cache);
+  test_ok("%s", __func__);
 }
 
 static void
@@ -301,6 +322,7 @@ test_resolve_cb(void)
   free(ctx);
   event_base_dispatch(base);
   event_base_free(base);
+  test_ok("%s", __func__);
 }
 
 static void
@@ -354,62 +376,54 @@ test_event_cb(void)
 
   event_base_dispatch(base);
   event_base_free(base);
+  test_ok("%s", __func__);
 }
 
 static
 void test_crypto(void)
 {
-  const EVP_CIPHER *cipher; // , *decipher;
-  u8 ciphertext[SOCKS_MAX_BUFFER_SIZE],
-    plaintext[64] =
-    "0123456789012345678901234567890123456789012345678901234567890123",
-    *plaintext_copy;
-  int ciphertext_len;
+  const EVP_CIPHER *cipher;
+  EVP_CIPHER_CTX *cipher_ctx, *decipher_ctx;
+  u8 out[SOCKS_MAX_BUFFER_SIZE],
+    in[11] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
+  int outl;
 
-  plaintext_copy = (unsigned char*)strndup((char*)plaintext, 64);
+  cipher_ctx = EVP_CIPHER_CTX_new();
+  decipher_ctx = EVP_CIPHER_CTX_new();
 
   cipher = EVP_get_cipherbyname(settings.cipher_name);
-
-  ciphertext_len = evs_encrypt(cipher, settings.dgst, ciphertext, plaintext, 64,
-			       (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
-
-  test_ok("ciphertext_len=%d", ciphertext_len);
-
-  u8 decrypted_text[ciphertext_len];
-
-  evs_decrypt(cipher, settings.dgst, decrypted_text, ciphertext, ciphertext_len,
-	      (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
-
-  if (!strcmp((const char*)plaintext_copy,
-	      (const char*)decrypted_text))
-    test_ok("decrypted=%s",&decrypted_text);
-  else
-    test_failed("doesn't match");
-
-  free(plaintext_copy);
+  outl = evs_encrypt(cipher, cipher_ctx, out, in, 11,
+		     settings.key, settings.iv, false);
+  u8 dec_buf[outl];
+  outl = evs_decrypt(cipher, decipher_ctx, dec_buf, out, outl,
+		     settings.key, settings.iv, false);
+  MEMCMP(in, dec_buf, sizeof(in));
 }
 
 static
 void test_wrapped_crypto(void)
 {
-  u8 plaintext[64] = "0123456789012345678901234567890123456789012345678901234567890123",
-    enc_buf[SOCKS_MAX_BUFFER_SIZE],
-    dec_buf[SOCKS_MAX_BUFFER_SIZE],
-    *plaintext_copy;
-  int outl;
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  int outl, index;
+  static const int buf_size = 100;
 
-  plaintext_copy = (u8*)strndup((char*)plaintext, 64);
-  outl = encrypt_(plaintext, 64, enc_buf);
+  for (int i = 0; i < 1000; i++) {
 
-  decrypt_(enc_buf, outl, dec_buf);
+    // Create random bytes.
+    u8 in[buf_size];
+    EVP_CIPHER_CTX *cipher_ctx, *decipher_ctx;
+    for (index = 0; index < buf_size; index++)
+      in[index] = rand();
 
-  if (!strcmp((const char*)plaintext_copy,
-	      (const char*)dec_buf))
-    test_ok("decrypted=%s",&dec_buf);
-  else
-    test_failed("doesn't match outl=\"%s\"", &dec_buf);
+    cipher_ctx = EVP_CIPHER_CTX_new();
+    decipher_ctx = EVP_CIPHER_CTX_new();
 
-  free(plaintext_copy);
+    outl = encrypt_(cipher_ctx, false, in, sizeof(in), enc_buf);
+    u8 dec_buf[outl];
+    outl = decrypt_(decipher_ctx, false, enc_buf,outl, dec_buf);
+    assert(memcmp(in, dec_buf, sizeof(in)) == 0);
+  }
+  test_ok("%s", __func__);
 }
 
 typedef void(*test_function)(void);
@@ -437,6 +451,9 @@ main(int argc, char **argv)
 
   crypto_init();
   test_setting_init();
+
+  EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
+		 settings.passphrase, settings.plen, 1, (u8*)settings.key, (u8*)settings.iv);
 
   total_tests = (int)sizeof(testcases)/sizeof(testcases[0]);
   for (current = 0; current < total_tests; current++)

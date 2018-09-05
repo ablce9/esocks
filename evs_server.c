@@ -60,10 +60,6 @@ run_srv(void)
   void *proxy = NULL;
   int socktype = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 
-  // Init OpenSSL
-  // TODO: free all loaded memory
-  crypto_init();
-
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
 
@@ -145,7 +141,6 @@ run_srv(void)
 
   if (!settings.proxy)
     {
-
       struct event *handle_dns_cache;
 
       memset(&cache_config, 0, sizeof(struct dns_cache_config));
@@ -254,6 +249,8 @@ ev_new_context(void)
       s->st = 0;
       s->reversed = false;
       s->event_handler = NULL;
+      s->evp_cipher_ctx = EVP_CIPHER_CTX_new();
+      s->successive = false;
     }
 
   return s;
@@ -284,43 +281,43 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
   bufferevent_set_timeouts(bev, &tval, &tval);
   bufferevent_set_timeouts(partner, &tval, &tval);
 
-  if (settings.proxy) {
-    // Set up proxy...
-    struct sockaddr_in *sin = (struct sockaddr_in*)settings.proxy;
+  if (settings.proxy)
+    {
+      // Set up proxy
+      struct sockaddr_in *sin = (struct sockaddr_in*)settings.proxy;
 
-    context->st = ev_init;
-    context->event_handler = (bufferevent_data_cb*)fast_streamcb;
+      context->st = ev_init;
+      context->event_handler = (bufferevent_data_cb*)fast_streamcb;
 
-    print_address((struct sockaddr*)&sin->sin_addr, AF_INET, "connect to");
+      print_address((struct sockaddr*)&sin->sin_addr, AF_INET, "connect to");
 
-    if (bufferevent_socket_connect(context->partner, (struct sockaddr*)sin,
-				   sizeof(struct sockaddr_in)) != 0)
-      {
-	DEBUG ? log_ex(1, "connect: failed to connect")
-	  : log_e("failed to connect");
+      if (bufferevent_socket_connect(context->partner, (struct sockaddr*)sin,
+				     sizeof(struct sockaddr_in)) != 0)
+	{
+	  DEBUG ? log_ex(1, "connect: failed to connect")
+	    : log_e("failed to connect");
 
-	context->st = ev_destroy;
-	bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
-      }
+	  context->st = ev_destroy;
+	  bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
+	}
 
-    if (context->st == ev_init)
-      {
-	// local server directly goes to streamcb.
-	// We want local server to run as fast as it can, so let's this as sharp as
-	// can be!
-	context->st = ev_connected;
-	evs_setcb_for_local(bev, context);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
+      if (context->st == ev_init)
+	{
+	  // local server directly goes to streamcb.
+	  // We want local server to run as fast as it can, so let's this as sharp as
+	  // can be!
+	  context->st = ev_connected;
+	  evs_setcb_for_local(bev, context);
+	  bufferevent_enable(bev, EV_READ|EV_WRITE);
+	}
 
-      }
-
-  } else
+    }
+  else
     {
       context->event_handler = (bufferevent_data_cb*)handle_streamcb;
       bufferevent_setcb(bev, socks_initcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
     }
-
 }
 
 void
@@ -363,14 +360,19 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	  log_d(DEBUG, "free context %s", context->domain);
 	  log_d(DEBUG, "context->st %d", context->st);
 
-	  if (context->st != 0 && context->st != ev_freed)
-	    context->reversed ?
-	      bufferevent_free(context->partner):
-	      bufferevent_free(context->bev);
+	  //if (context->st != 0 && context->st != ev_freed)
+	  context->reversed ?
+	    bufferevent_free(context->partner):
+	    bufferevent_free(context->bev);
 
 	  context->st = 0;
 	  context->partner = NULL;
 	  context->bev = NULL;
+	  if (context->evp_cipher_ctx)
+	    {
+	      EVP_CIPHER_CTX_cleanup(context->evp_cipher_ctx);
+	      EVP_CIPHER_CTX_free(context->evp_cipher_ctx);
+	    }
 	  // To avoid double free, make sure a context becomes NULL.
 	  context = NULL;
 	  free(context);
@@ -399,14 +401,14 @@ socks_initcb(struct bufferevent *bev, void *ctx)
   struct evbuffer *src = bufferevent_get_input(bev);
   struct ev_context_s *context = ctx;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE], enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE], dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  decrypt_(buf, buf_size, dec_buf);
+  decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
 
   if (dec_buf[0] == 5)
     {
@@ -414,7 +416,7 @@ socks_initcb(struct bufferevent *bev, void *ctx)
       // enc
       u8 p[2] = {5, 0};
 
-      outl = encrypt_(p, 2, enc_buf);
+      outl = encrypt_(context->evp_cipher_ctx, context->successive, p, sizeof(p), enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) != 0)
 	{
@@ -462,7 +464,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  decrypt_(buf, buf_size, dec_buf);
+  decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
 
   /* Check if version is correct and status is equal to INIT */
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
@@ -491,7 +493,6 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   // Connect to the server
   switch(dec_buf[3])
     {
-
     case IPV4:
       memcpy(buf4, dec_buf + 4, sizeof(buf4));
       evutil_snprintf(tmp4, sizeof(tmp4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
@@ -597,7 +598,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   if (context->st == ev_connected)
     {
       u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-      int outl = encrypt_(resp, 10, enc_buf);
+      int outl = encrypt_(context->evp_cipher_ctx, context->successive, resp, sizeof(resp), enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) < 0)
 	{
@@ -635,16 +636,15 @@ next_readcb(struct bufferevent *bev, void *ctx)
   struct evbuffer *src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
-  int outl;
 
   if (context->st == ev_connected && buf_size)
     {
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
 
-      outl = decrypt_(buf, buf_size, dec_buf);
-
       // dec
+      int outl = decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
+
       if (bufferevent_write(partner, dec_buf, outl) < 0)
 	{
 	  log_e("bufferevent_write");
@@ -654,7 +654,7 @@ next_readcb(struct bufferevent *bev, void *ctx)
 
       context->reversed = true;
       context->st = ev_connected;
-
+      context->successive = false;
       /* set callbacks and wait for server response */
       bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
       bufferevent_enable(partner, EV_WRITE|EV_READ);
@@ -668,7 +668,7 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev), *dst;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_or_enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   if (!partner || !buf_size)
@@ -677,25 +677,22 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
       return;
     }
 
-  // dec or enc
-  evbuffer_copyout(src, buf, buf_size);
-  evbuffer_drain(src, buf_size);
-
-  if (settings.proxy)
-    outl = decrypt_(buf, buf_size, dec_or_enc_buf);
-
-  else
-    outl = encrypt_(buf, buf_size, dec_or_enc_buf);
-
   if (context->st == ev_connected && buf_size && context->partner)
     {
-      if (bufferevent_write(partner, dec_or_enc_buf, outl) != 0)
+      // enc
+      evbuffer_copyout(src, buf, buf_size);
+      evbuffer_drain(src, buf_size);
+
+      outl = encrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, enc_buf);
+
+      if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
 	  log_e("failed to write");
 	  destroycb(partner, context);
 	  return;
 	}
 
+      context->successive = true;
       // Keep doing proxy until there is no data
       bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -738,7 +735,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
   socks_addr_t *socks_addr;
   int i, try;
   // Send out 10 bytes to reply OK!
-  u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
+  u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0}, enc_buf[SOCKS_MAX_BUFFER_SIZE];
 
   if (errcode != 0 || ai == NULL)
     {
@@ -828,7 +825,8 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       if (context->bev != NULL)
 	{
-	  bufferevent_write(context->bev, resp, 10);
+	  int outl = encrypt_(context->evp_cipher_ctx, context->successive, resp, sizeof(resp), enc_buf);
+	  bufferevent_write(context->bev, enc_buf, outl);
 	  bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
 	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
 	}
@@ -968,16 +966,15 @@ print_address(struct sockaddr *buf, int type, const char *ctx)
 }
 
 int
-encrypt_(u8 *in, int ilen, u8 *out)
+encrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out)
 {
-  return evs_encrypt(settings.cipher, settings.dgst, out, in, ilen,
-		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
+  return evs_encrypt(settings.cipher, ctx, out, in, ilen,
+		     settings.key, settings.iv, successive);
 }
 
 int
-decrypt_(u8 *in, int ilen, u8 *out)
+decrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out)
 {
-  return evs_decrypt(settings.cipher, settings.dgst, out, in, ilen,
-		     (u8*)settings.passphrase, settings.plen, settings.key, settings.iv);
-
+  return evs_decrypt(settings.cipher, ctx, out, in, ilen,
+		     settings.key, settings.iv,  successive);
 }

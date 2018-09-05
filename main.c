@@ -30,7 +30,7 @@ settings_init(void)
   settings.srv_port = 1080;
   settings.server_addr = "0.0.0.0";
   settings.server_port = 1080;
-  settings.passphrase = "too lame to set password";
+  settings.passphrase = (u8*)"too lame to set password";
   // Timeout for connections made between clients and a server.
   settings.timeout = 300;
   settings.relay_mode = false;
@@ -42,8 +42,19 @@ settings_init(void)
   settings.proxy = NULL;
 
   // TODO: refactor
-  memcpy(settings.key, "012345678901234567890123456789012345678901234567", 48);
-  memcpy(settings.iv, "0123456789012345", 15);
+  const u8 key16[16] = {
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
+  };
+  const u8 ckey32[32] = {
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12,
+    0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
+    0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56
+  };
+
+  settings.key = ckey32;
+  settings.iv = key16;
   settings.cipher_name = "aes-256-cfb";
 }
 
@@ -105,7 +116,7 @@ main(int argc, char **argv)
       settings.relay_mode = true;
       break;
     case 'k':
-      settings.passphrase = optarg;
+      settings.passphrase = (u8*)optarg;
       break;
     case 'n':
       settings.worker = optarg;
@@ -135,9 +146,12 @@ main(int argc, char **argv)
     }
   }
 
-  settings.plen = strlen(settings.passphrase);
+  settings.plen = strlen((char*)settings.passphrase);
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
   settings.dgst = EVP_md5();
+
+  EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
+		 settings.passphrase, settings.plen, 1, (u8*)settings.key, (u8*)settings.iv);
 
   if (settings.cipher == NULL)
     log_ex(1, "Setting cipher %s", settings.cipher_name);

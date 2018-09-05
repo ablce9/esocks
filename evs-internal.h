@@ -73,9 +73,9 @@ struct settings {
   const char           *cipher_name;
   const EVP_MD         *dgst;
   const EVP_CIPHER     *cipher;
-  u8                   iv[EVP_MAX_IV_LENGTH];
-  u8                   key[EVP_MAX_KEY_LENGTH];
-  const char           *passphrase;
+  const u8             *iv;
+  const u8             *key;
+  u8                   *passphrase;
   int                  plen;
 };
 
