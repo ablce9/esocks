@@ -150,7 +150,7 @@ lru_purge_all(lru_node_t **node_pptr)
   lru_node_t *ptr = *node_pptr;
 
   if (ptr != NULL) {
-    log_d(DEBUG, "remove %s", ptr->key);
+    log_d(DEBUG, "remove %s", !ptr->key ? "myself" : ptr->key);
     ptr->key = NULL;
     ptr->payload_ptr = NULL;
     ptr->start = 0;
