@@ -8,11 +8,11 @@
 
 // Symmetric encryption and decrytion.
 int evs_encrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
-		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool sucessive)
+		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool successive)
 {
   int len;
 
-  if (!sucessive)
+  if (!successive)
     if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 1))
       goto err;
 
@@ -27,11 +27,11 @@ int evs_encrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
 }
 
 int evs_decrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
-		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool sucessive)
+		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool successive)
 {
   int len;
 
-  if (!sucessive)
+  if (!successive)
     if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0))
       goto err;
 
