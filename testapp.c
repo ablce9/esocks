@@ -383,21 +383,22 @@ static
 void test_crypto(void)
 {
   const EVP_CIPHER *cipher;
-  EVP_CIPHER_CTX *cipher_ctx, *decipher_ctx;
+  EVP_CIPHER_CTX *c1, *c2;
   u8 out[SOCKS_MAX_BUFFER_SIZE],
     in[11] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
   int outl;
 
-  cipher_ctx = EVP_CIPHER_CTX_new();
-  decipher_ctx = EVP_CIPHER_CTX_new();
-
+  c1 = EVP_CIPHER_CTX_new();
+  c2 = EVP_CIPHER_CTX_new();
   cipher = EVP_get_cipherbyname(settings.cipher_name);
-  outl = evs_encrypt(cipher, cipher_ctx, out, in, 11,
+  outl = evs_encrypt(cipher, c1, out, in, 11,
 		     settings.key, settings.iv, false);
   u8 dec_buf[outl];
-  outl = evs_decrypt(cipher, decipher_ctx, dec_buf, out, outl,
+  outl = evs_decrypt(cipher, c2, dec_buf, out, outl,
 		     settings.key, settings.iv, false);
   MEMCMP(in, dec_buf, sizeof(in));
+  EVP_CIPHER_CTX_free(c1);
+  EVP_CIPHER_CTX_free(c2);
 }
 
 static
@@ -408,22 +409,54 @@ void test_wrapped_crypto(void)
   static const int buf_size = 100;
 
   for (int i = 0; i < 1000; i++) {
-
     // Create random bytes.
     u8 in[buf_size];
-    EVP_CIPHER_CTX *cipher_ctx, *decipher_ctx;
+    EVP_CIPHER_CTX *c1, *c2;
     for (index = 0; index < buf_size; index++)
       in[index] = rand();
 
-    cipher_ctx = EVP_CIPHER_CTX_new();
-    decipher_ctx = EVP_CIPHER_CTX_new();
+    c1 = EVP_CIPHER_CTX_new();
+    c2 = EVP_CIPHER_CTX_new();
 
-    outl = encrypt_(cipher_ctx, false, in, sizeof(in), enc_buf);
+    outl = encrypt_(c1, false, in, sizeof(in), enc_buf);
     u8 dec_buf[outl];
-    outl = decrypt_(decipher_ctx, false, enc_buf,outl, dec_buf);
+    outl = decrypt_(c2, false, enc_buf,outl, dec_buf);
     assert(memcmp(in, dec_buf, sizeof(in)) == 0);
+    EVP_CIPHER_CTX_free(c1);
+    EVP_CIPHER_CTX_free(c2);
   }
   test_ok("%s", __func__);
+}
+
+static void
+test_successive_encryption(void)
+{
+  EVP_CIPHER_CTX *c1, *c2;
+  static const int buf_size = 2049; // Tempted to set to 2048 but it's really important not to do
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE], dec_buf[SOCKS_MAX_BUFFER_SIZE], in[buf_size], buf[buf_size];
+  int i;
+  _Bool successive = false;
+
+  c1 = EVP_CIPHER_CTX_new();
+  c2 = EVP_CIPHER_CTX_new();
+  for (i = 0; i < buf_size; i++)
+    buf[i] = rand();
+
+  int enc_total = 0, dec_total = 0;
+  i = 0;
+  do {
+    i += 513;
+    memcpy(in, buf, i);
+    enc_total += encrypt_(c1, successive, in, i, enc_buf);
+    dec_total += decrypt_(c2, successive, enc_buf, i, dec_buf);
+    printf("enc_t=%d, dec_t=%d\n", enc_total, dec_total);
+    successive = true;
+  } while(i < buf_size);
+
+  MEMCMP(dec_buf, in, buf_size);
+  test_ok("%s", __func__);
+  EVP_CIPHER_CTX_free(c1);
+  EVP_CIPHER_CTX_free(c2);
 }
 
 typedef void(*test_function)(void);
@@ -442,25 +475,22 @@ struct testcase testcases[] = {
   {"test_lru_timeout_handler", test_lru_timeout_handler},
   {"test_crypto", test_crypto},
   {"test_wrapped_crypto", test_wrapped_crypto},
+  {"test_successive_encryption", test_successive_encryption},
 };
 
 int
 main(int argc, char **argv)
 {
   int total_tests, current;
-
   crypto_init();
   test_setting_init();
-
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
 		 settings.passphrase, settings.plen, 1, (u8*)settings.key, (u8*)settings.iv);
-
   total_tests = (int)sizeof(testcases)/sizeof(testcases[0]);
   for (current = 0; current < total_tests; current++)
     {
       testcases[current].function();
     }
-
   crypto_shutdown();
   return 0;
 }

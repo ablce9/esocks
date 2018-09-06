@@ -10,7 +10,7 @@
 int evs_encrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
 		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool successive)
 {
-  int len;
+  int outl, len;
 
   if (!successive)
     if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 1))
@@ -19,7 +19,9 @@ int evs_encrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
   if (!EVP_EncryptUpdate(ctx, out, &len, in, ilen))
     goto err;
 
-  return (len);
+  outl = len;
+
+  return (outl);
 
  err:
   fprintf(stderr, "error occurred\n");
@@ -29,7 +31,7 @@ int evs_encrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
 int evs_decrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
 		u8 *out, u8 *in, int ilen, const u8 *key, const u8 *iv, _Bool successive)
 {
-  int len;
+  int outl, len;
 
   if (!successive)
     if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0))
@@ -38,7 +40,9 @@ int evs_decrypt(const EVP_CIPHER *cipher, EVP_CIPHER_CTX *ctx,
   if (!EVP_DecryptUpdate(ctx, out, &len, in, ilen))
     goto err;
 
-  return (len);
+  outl = len;
+
+  return (outl);
 
  err:
   fprintf(stderr, "error occurred\n");
