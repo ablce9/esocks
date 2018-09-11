@@ -15,7 +15,7 @@ tcp    0      128                                             *:1080            
 
 ## NOTES
  ### project status
-   It's NOT WORKING when handling TLS. So, help wanted. The app works without encryption. In case without encryption, ```git checkout no-crypto``` and make.
+ It's pretty much a WIP.
 
 ## BUILD
 ```console
@@ -29,8 +29,8 @@ tcp    0      128                                             *:1080            
 
 ## TODO
  - Make valgrind stop complaining about memory leak stuff. There seems nasty leaks around lru cache.
- - Need a breakthrough in crpyto.c. Cannot figure out how to handle successive buffer.
- - RELEASE! RELEASE! Make app portable!
+ - ~~Need a breakthrough in crpyto.c. Cannot figure out how to handle successive buffer.~~ Use stream ciphers instead of block ciphers.
+ - key and intial vector for EVP_CIPHER_CTX is hard-coded now, so let's come up with some idea not do so.
 
 ## What the heck is this?
  I'm inspired by Tor project. You launch two servers on your local computer and a server somewhere safe. Two servers establish a _safe_ tunnel and you can access stuff without being afraid of eavesdroppers.<br/>

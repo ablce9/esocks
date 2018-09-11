@@ -12,14 +12,19 @@
     else test_failed("doesn't match: %s", __func__);    \
 } while(0);
 
+#define CIPHER_INIT(ctx, cipher, key, iv, opt)		      \
+  do { if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, opt)) \
+	 test_failed("failed to init cipher"); \
+  } while (0);
+
 static void
 test_setting_init(void)
 {
-  const u8 key16[16] = {
+  const u8 iv16[16] = {
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
     0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
   };
-  const u8 ckey32[32] = {
+  const u8 key32[32] = {
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
     0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12,
     0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
@@ -31,9 +36,8 @@ test_setting_init(void)
   settings.cipher_name = "aes-256-cfb";
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
   settings.dgst = EVP_md5();
-
-  settings.key = key16;
-  settings.iv = ckey32;
+  settings.key = iv16;
+  settings.iv = key32;
 }
 
 static void
@@ -361,7 +365,7 @@ test_event_cb(void)
   memcpy(&ctx0.domain, "foooo", 5);
   eventcb(bev0, what, (void*)&ctx0);
 
-  assert(ctx0.st == 0);
+  assert(ctx0.st == ev_freed);
   assert(ctx0.bev == NULL);
   assert(ctx0.partner == NULL);
 
@@ -370,7 +374,7 @@ test_event_cb(void)
   memcpy(&ctx1.domain, "doooo", 5);
   eventcb(bev1, what, (void*)&ctx1);
 
-  assert(ctx1.st == 0);
+  assert(ctx1.st == ev_freed);
   assert(ctx1.bev == NULL);
   assert(ctx1.partner == NULL);
 
@@ -382,21 +386,26 @@ test_event_cb(void)
 static
 void test_crypto(void)
 {
-  const EVP_CIPHER *cipher;
   EVP_CIPHER_CTX *c1, *c2;
   u8 out[SOCKS_MAX_BUFFER_SIZE],
-    in[11] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
+    in[32] = {
+    0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xf,
+    0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xf,
+    };
   int outl;
 
   c1 = EVP_CIPHER_CTX_new();
   c2 = EVP_CIPHER_CTX_new();
-  cipher = EVP_get_cipherbyname(settings.cipher_name);
-  outl = evs_encrypt(cipher, c1, out, in, 11,
-		     settings.key, settings.iv, false);
+
+  CIPHER_INIT(c1, settings.cipher, settings.key, settings.iv, 1);
+  CIPHER_INIT(c2, settings.cipher, settings.key, settings.iv, 0);
+
+  outl = openssl_encrypt(c1, out, in, sizeof(in));
   u8 dec_buf[outl];
-  outl = evs_decrypt(cipher, c2, dec_buf, out, outl,
-		     settings.key, settings.iv, false);
-  MEMCMP(in, dec_buf, sizeof(in));
+  printf("len=%d, buf=%d\n", (int)sizeof(in), outl);
+  outl = openssl_decrypt(c2, dec_buf, out, outl);
+
+  MEMCMP(in, dec_buf, outl);
   EVP_CIPHER_CTX_free(c1);
   EVP_CIPHER_CTX_free(c2);
 }
@@ -407,8 +416,9 @@ void test_wrapped_crypto(void)
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl, index;
   static const int buf_size = 100;
+  int i;
 
-  for (int i = 0; i < 1000; i++) {
+  for (i = 0; i < 1000; i++) {
     // Create random bytes.
     u8 in[buf_size];
     EVP_CIPHER_CTX *c1, *c2;
@@ -418,10 +428,14 @@ void test_wrapped_crypto(void)
     c1 = EVP_CIPHER_CTX_new();
     c2 = EVP_CIPHER_CTX_new();
 
-    outl = encrypt_(c1, false, in, sizeof(in), enc_buf);
+    CIPHER_INIT(c1, settings.cipher, settings.key, settings.iv, 1);
+    CIPHER_INIT(c2, settings.cipher, settings.key, settings.iv, 0);
+
+    outl = ev_encrypt(c1, in, sizeof(in), enc_buf);
     u8 dec_buf[outl];
-    outl = decrypt_(c2, false, enc_buf,outl, dec_buf);
-    assert(memcmp(in, dec_buf, sizeof(in)) == 0);
+    outl = ev_decrypt(c2, enc_buf,outl, dec_buf);
+
+    assert(memcmp(in, dec_buf, outl) == 0);
     EVP_CIPHER_CTX_free(c1);
     EVP_CIPHER_CTX_free(c2);
   }
@@ -429,31 +443,32 @@ void test_wrapped_crypto(void)
 }
 
 static void
-test_successive_encryption(void)
+test_stream_encryption(void)
 {
   EVP_CIPHER_CTX *c1, *c2;
   static const int buf_size = 2049; // Tempted to set to 2048 but it's really important not to do
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE], dec_buf[SOCKS_MAX_BUFFER_SIZE], in[buf_size], buf[buf_size];
   int i;
-  _Bool successive = false;
 
   c1 = EVP_CIPHER_CTX_new();
   c2 = EVP_CIPHER_CTX_new();
-  for (i = 0; i < buf_size; i++)
-    buf[i] = rand();
 
-  int enc_total = 0, dec_total = 0;
+  CIPHER_INIT(c1, settings.cipher, settings.key, settings.iv, 1);
+  CIPHER_INIT(c2, settings.cipher, settings.key, settings.iv, 0);
+
+  for (i = 0; i < buf_size; i++)
+    buf[i] = i;
+
   i = 0;
   do {
-    i += 513;
+    int enc_total = 0, dec_total = 0;
+    i += 517;
     memcpy(in, buf, i);
-    enc_total += encrypt_(c1, successive, in, i, enc_buf);
-    dec_total += decrypt_(c2, successive, enc_buf, i, dec_buf);
-    printf("enc_t=%d, dec_t=%d\n", enc_total, dec_total);
-    successive = true;
+    enc_total += ev_encrypt(c1, in, i, enc_buf);
+    dec_total += ev_decrypt(c2, enc_buf, i, dec_buf);
+    assert(memcmp(in, dec_buf, dec_total) == 0);
   } while(i < buf_size);
 
-  MEMCMP(dec_buf, in, buf_size);
   test_ok("%s", __func__);
   EVP_CIPHER_CTX_free(c1);
   EVP_CIPHER_CTX_free(c2);
@@ -475,7 +490,7 @@ struct testcase testcases[] = {
   {"test_lru_timeout_handler", test_lru_timeout_handler},
   {"test_crypto", test_crypto},
   {"test_wrapped_crypto", test_wrapped_crypto},
-  {"test_successive_encryption", test_successive_encryption},
+  {"test_stream_encryption", test_stream_encryption},
 };
 
 int

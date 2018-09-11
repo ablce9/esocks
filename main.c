@@ -40,8 +40,9 @@ settings_init(void)
   settings.rate_wlimit = 20000;
   settings.rate_rlimit = 20000;
   settings.proxy = NULL;
+  settings.dns_cache_tval = 300;
 
-  // TODO: refactor
+  // TODO: refactor, this ain't good for security!
   const u8 key16[16] = {
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
     0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
@@ -75,6 +76,7 @@ void usage() {
 	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
 	 "  -r  limit reading rate in bytes, default none\n"
 	 "  -w  limit writing rate in bytes, default none\n"
+	 "  -d   dns cache timeout, default 300\n"
 	 );
   exit(1);
 }
@@ -92,7 +94,7 @@ main(int argc, char **argv)
   settings_init();
 
   while (cc != -1) {
-    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:");
+    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:d:");
 
     switch(cc) {
     case 's':
@@ -143,6 +145,11 @@ main(int argc, char **argv)
     case 'c':
       settings.cipher_name = optarg;
       break;
+    case 'd':
+      settings.dns_cache_tval = atol(optarg);
+      break;
+    case '?':
+      usage();
     }
   }
 
@@ -162,10 +169,10 @@ main(int argc, char **argv)
     log_i("%s:%d and connect to %s:%d",
 	  settings.srv_addr, settings.srv_port, settings.server_addr, settings.server_port);
   else
-    {
       log_i("%s:%d", settings.srv_addr, settings.srv_port);
-      log_d(DEBUG, "running in debug mode, timeout=%d seconds", settings.timeout);
-    }
+
+  log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
+	settings.timeout, settings.cipher_name);
 
   (void)run_srv();
 

@@ -46,6 +46,7 @@ static void event_logger(short what, struct ev_context_s *ctx);
 static void unchoke_writecb(struct bufferevent *bev, void *ctx);
 static void dns_logfn(int is_warn, const char *msg);
 static struct ev_context_s *ev_new_context(void);
+static void ev_free_context(struct ev_context_s *ctx);
 const char * _getprogname(void) { return "esocks"; }
 
 void
@@ -54,7 +55,7 @@ run_srv(void)
   struct event *signal_event, *sigpipe_event, *listen_event;
   struct dns_cache_config cache_config;
   struct sockaddr_in sin, proxy_sin;
-  struct timeval dns_cache_tval = {300, 0}; // 5 minutes
+  struct timeval dns_cache_tval = {settings.dns_cache_tval, 0}; // 5 minutes
 
   int fd;
   void *proxy = NULL;
@@ -95,7 +96,6 @@ run_srv(void)
     goto err;
 
 #if defined(HAVE_TCP_FASTOPEN) && defined(HAVE_TCP_NODELAY)
-
   int optval = 5;
 
   log_i("set tcp_fastopen and tcp_nodelay");
@@ -147,15 +147,15 @@ run_srv(void)
 
       log_i("start DNS service");
 
-      // Start asynchronous dns services
+      // Start asynchronous dns services.
       dns_base = evdns_base_new(base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
-	log_ex(1, "end_base_new");
+	log_ex(1, "evdns_base_new");
 
       if (DEBUG)
 	evdns_set_log_fn(dns_logfn);
 
-      // Configure nameservers
+      // Configure nameservers.
       if (settings.nameserver)
 	log_ex(1, "failed to add nameserver(s)");
 
@@ -169,7 +169,7 @@ run_srv(void)
       cache_config.cache = node;
       cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
-      // Clean dns cache with timeout
+      // Clean dns cache with timeout.
       handle_dns_cache = event_new(base, -1,
 				   EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
 				   (void*)&cache_config);
@@ -235,25 +235,59 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
 static struct ev_context_s *
 ev_new_context(void)
 {
-  struct ev_context_s *s;
+  struct ev_context_s *ctx;
 
-  s = calloc(1, sizeof(struct ev_context_s));
+  ctx = calloc(1, sizeof(struct ev_context_s));
 
-  if (s != NULL)
+  if (ctx != NULL)
     {
-      s->bev = NULL;
-      s->partner = NULL;
-      s->sin = NULL;
-      s->sin6 = NULL;
-      s->socks_addr = NULL;
-      s->st = 0;
-      s->reversed = false;
-      s->event_handler = NULL;
-      s->evp_cipher_ctx = EVP_CIPHER_CTX_new();
-      s->successive = false;
+      ctx->bev = NULL;
+      ctx->partner = NULL;
+      ctx->sin = NULL;
+      ctx->sin6 = NULL;
+      ctx->socks_addr = NULL;
+      ctx->st = 0;
+      ctx->reversed = false;
+      ctx->event_handler = NULL;
+      ctx->evp_cipher_ctx = EVP_CIPHER_CTX_new();
+      ctx->evp_decipher_ctx = EVP_CIPHER_CTX_new();
     }
 
-  return s;
+  if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 1))
+    return NULL;
+
+  if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 0))
+    return NULL;
+
+  return ctx;
+}
+
+static void
+ev_free_context(struct ev_context_s *ctx)
+{
+  if (ctx != NULL)
+    {
+      log_d(DEBUG, "left with status=%d", ctx->st);
+
+      ctx->reversed ?
+	bufferevent_free(ctx->partner):
+	bufferevent_free(ctx->bev);
+
+      ctx->st = ev_freed;
+      ctx->partner = NULL;
+      ctx->bev = NULL;
+      if (ctx->evp_cipher_ctx && ctx->evp_decipher_ctx)
+	{
+	  EVP_CIPHER_CTX_cleanup(ctx->evp_cipher_ctx);
+	  EVP_CIPHER_CTX_free(ctx->evp_cipher_ctx);
+
+	  EVP_CIPHER_CTX_cleanup(ctx->evp_decipher_ctx);
+	  EVP_CIPHER_CTX_free(ctx->evp_decipher_ctx);
+	}
+      // To avoid double free, make sure a ctx becomes NULL.
+      ctx = NULL;
+      free(ctx);
+    }
 }
 
 static void
@@ -304,8 +338,6 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
       if (context->st == ev_init)
 	{
 	  // local server directly goes to streamcb.
-	  // We want local server to run as fast as it can, so let's this as sharp as
-	  // can be!
 	  context->st = ev_connected;
 	  evs_setcb_for_local(bev, context);
 	  bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -347,52 +379,15 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	  else
 	    {
 	      /* We have nothing left to say to the other
-	       * spide; close it! */
+	       * side; close it! */
 	      log_d(DEBUG, "nothing to write and let partner go");
 	      bufferevent_free(partner);
 	      context->st = ev_freed;
 	    }
-
 	}
 
-      if (context != NULL)
-	{
-	  log_d(DEBUG, "free context %s", context->domain);
-	  log_d(DEBUG, "context->st %d", context->st);
-
-	  //if (context->st != 0 && context->st != ev_freed)
-	  context->reversed ?
-	    bufferevent_free(context->partner):
-	    bufferevent_free(context->bev);
-
-	  context->st = 0;
-	  context->partner = NULL;
-	  context->bev = NULL;
-	  if (context->evp_cipher_ctx)
-	    {
-	      EVP_CIPHER_CTX_cleanup(context->evp_cipher_ctx);
-	      EVP_CIPHER_CTX_free(context->evp_cipher_ctx);
-	    }
-	  // To avoid double free, make sure a context becomes NULL.
-	  context = NULL;
-	  free(context);
-	}
+      ev_free_context(context);
     }
-}
-
-static void
-event_logger(short what, struct ev_context_s *ctx)
-{
-  log_d(DEBUG, "reversed=%s status=%d domain=%s event=%s %s %s %s %s %s",
-	ctx->reversed ? "true" : "false",
-	ctx->st,
-	ctx->domain,
-	(what & BEV_EVENT_READING  ) ? "ev_reading": "",
-	(what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
-	(what & BEV_EVENT_EOF      ) ? "ev_eof": "",
-	(what & BEV_EVENT_ERROR    ) ? "ev_error": "",
-	(what & BEV_EVENT_TIMEOUT  ) ? "ev_timeout": "",
-	(what & BEV_EVENT_CONNECTED) ? "ev_connected": "");
 }
 
 static void
@@ -408,7 +403,7 @@ socks_initcb(struct bufferevent *bev, void *ctx)
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
+  ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
   if (dec_buf[0] == 5)
     {
@@ -416,7 +411,7 @@ socks_initcb(struct bufferevent *bev, void *ctx)
       // enc
       u8 p[2] = {5, 0};
 
-      outl = encrypt_(context->evp_cipher_ctx, context->successive, p, sizeof(p), enc_buf);
+      outl = ev_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) != 0)
 	{
@@ -464,7 +459,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
+  ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
   /* Check if version is correct and status is equal to INIT */
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
@@ -481,7 +476,6 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       default:
 	log_warn("unkonw command=%d", dec_buf[1]);
 	context->st = ev_destroy;
-	// bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
 	// enc
 	bufferevent_write(bev, msg, 2);
 	bufferevent_disable(bev, EV_WRITE);
@@ -598,7 +592,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   if (context->st == ev_connected)
     {
       u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-      int outl = encrypt_(context->evp_cipher_ctx, context->successive, resp, sizeof(resp), enc_buf);
+      int outl = ev_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) < 0)
 	{
@@ -643,7 +637,7 @@ next_readcb(struct bufferevent *bev, void *ctx)
       evbuffer_drain(src, buf_size);
 
       // dec
-      int outl = decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
+      int outl = ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
       if (bufferevent_write(partner, dec_buf, outl) < 0)
 	{
@@ -654,7 +648,7 @@ next_readcb(struct bufferevent *bev, void *ctx)
 
       context->reversed = true;
       context->st = ev_connected;
-      context->successive = false;
+
       /* set callbacks and wait for server response */
       bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
       bufferevent_enable(partner, EV_WRITE|EV_READ);
@@ -683,7 +677,7 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
 
-      outl = encrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, enc_buf);
+      outl = ev_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
 
       if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
@@ -692,7 +686,6 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
 	  return;
 	}
 
-      context->successive = true;
       // Keep doing proxy until there is no data
       bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -762,11 +755,11 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       socks_addr = calloc(1, sizeof(socks_addr_t));
       if (!socks_addr)
-	log_warn("calloc");
+	log_ex(1, "calloc");
 
       socks_addr->addrs = malloc(i * sizeof(socks_addr_t));
       if (!socks_addr->addrs)
-	log_warn("malloc");
+	log_ex(1, "malloc");
 
       socks_addr->naddrs = i;
 
@@ -776,7 +769,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
 	sin_p = malloc(sizeof(struct sockaddr_in));
 	if (!sin_p)
-	  log_warn("malloc");
+	  log_ex(1, "malloc");
 
 	memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
 
@@ -825,7 +818,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       if (context->bev != NULL)
 	{
-	  int outl = encrypt_(context->evp_cipher_ctx, context->successive, resp, sizeof(resp), enc_buf);
+	  int outl = ev_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
 	  bufferevent_write(context->bev, enc_buf, outl);
 	  bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
 	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
@@ -848,27 +841,18 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 void
 destroycb(struct bufferevent *bev, struct ev_context_s *ctx)
 {
-  bufferevent_free(bev);
-  ctx = NULL;
-  free(ctx);
+  ev_free_context(ctx);
 }
 
 void
 close_on_finished_writecb(struct bufferevent *bev, void *ctx)
 {
   struct evbuffer *evb = bufferevent_get_output(bev);
-  struct ev_context_s *context = ctx;
 
   if (evbuffer_get_length(evb) == 0)
     {
-      bufferevent_free(bev);
-      context->st = ev_freed;
-      context->partner = NULL;
-      context->bev = NULL;
-      // To avoid double free, make sure a context becomes NULL.
-      context = NULL;
-      free(context);
       log_d(DEBUG, "close_on_finished_writecb");
+      bufferevent_free(bev);
     }
 }
 
@@ -965,16 +949,29 @@ print_address(struct sockaddr *buf, int type, const char *ctx)
   log_warn("no address found");
 }
 
-int
-encrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out)
+static void
+event_logger(short what, struct ev_context_s *ctx)
 {
-  return evs_encrypt(settings.cipher, ctx, out, in, ilen,
-		     settings.key, settings.iv, successive);
+  log_d(DEBUG, "reversed=%s status=%d domain=%s event=%s %s %s %s %s %s",
+	ctx->reversed ? "true" : "false",
+	ctx->st,
+	ctx->domain,
+	(what & BEV_EVENT_READING  ) ? "ev_reading": "",
+	(what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
+	(what & BEV_EVENT_EOF      ) ? "ev_eof": "",
+	(what & BEV_EVENT_ERROR    ) ? "ev_error": "",
+	(what & BEV_EVENT_TIMEOUT  ) ? "ev_timeout": "",
+	(what & BEV_EVENT_CONNECTED) ? "ev_connected": "");
 }
 
 int
-decrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out)
+ev_encrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
 {
-  return evs_decrypt(settings.cipher, ctx, out, in, ilen,
-		     settings.key, settings.iv,  successive);
+  return openssl_encrypt(ctx, out, in, ilen);
+}
+
+int
+ev_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
+{
+  return openssl_decrypt(ctx, out, in, ilen);
 }

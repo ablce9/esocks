@@ -1,8 +1,10 @@
 *~
 *.o
 .deps/
+autoscan.log
 aclocal.m4
 autom4te.cache/
+configure.scan
 config.status
 config.h
 config.h.in

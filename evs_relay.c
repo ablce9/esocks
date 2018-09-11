@@ -36,20 +36,16 @@ fast_streamcb(struct bufferevent *bev, void *ctx)
   if (context->st == ev_connected && context->partner)
     {
       // enc
-      outl = encrypt_(context->evp_cipher_ctx, false, buf, buf_size, enc_buf);
+      outl = ev_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
       if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
 	  log_e("failed to write");
 	  context->st = ev_destroy;
 	}
-      // TODO:
-      //   set up some cbs
-      // bufferevent_setcb(bev, NULL, err_writecb, __eventcb, failed);
-
       else
 	{
 	  context->reversed = true;
-	  context->successive = false;
+
 	  // Keep doing proxy until there is no data
 	  bufferevent_setcb(partner, streamcb, NULL, eventcb, context);
 	  bufferevent_enable(partner, EV_READ|EV_WRITE);
@@ -79,7 +75,7 @@ streamcb(struct bufferevent *bev, void *ctx)
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
 
-      outl = decrypt_(context->evp_cipher_ctx, context->successive, buf, buf_size, dec_buf);
+      outl = ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
       if (bufferevent_write(partner, dec_buf, outl) != 0)
 	{
 	  log_e("failed to write");
@@ -87,7 +83,6 @@ streamcb(struct bufferevent *bev, void *ctx)
 	  return;
 	}
 
-      context->successive = true;
       // Keep doing proxy until there is no data
       bufferevent_setcb(bev, streamcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);

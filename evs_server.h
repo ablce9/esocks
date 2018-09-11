@@ -38,8 +38,8 @@ struct ev_context_s {
   socks_status_e          st;
   short                   what;
   _Bool                   reversed;
-  _Bool                   successive;
   EVP_CIPHER_CTX         *evp_cipher_ctx;
+  EVP_CIPHER_CTX         *evp_decipher_ctx;
 };
 
 void run_srv(void);
@@ -53,7 +53,7 @@ void handle_streamcb(struct bufferevent *bev, void *ctx);
 void evs_setcb_for_local(struct bufferevent *bev, void *context);
 void eventcb(struct bufferevent *bev, short what, void *ctx);
 void clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx);
-int encrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out);
-int decrypt_(EVP_CIPHER_CTX *ctx, _Bool successive, u8 *in, int ilen, u8 *out);
+int ev_encrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out);
+int ev_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out);
 
 #endif

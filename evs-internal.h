@@ -77,6 +77,7 @@ struct settings {
   const u8             *key;
   u8                   *passphrase;
   int                  plen;
+  long                 dns_cache_tval;
 };
 
 extern struct settings settings;
