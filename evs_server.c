@@ -41,7 +41,7 @@ static void accept_func(evutil_socket_t, short, void*);
 static void socks_initcb(struct bufferevent *bev, void *ctx);
 static void parse_header_cb(struct bufferevent *bev, void *ctx);
 static void next_readcb(struct bufferevent *bev, void *ctx);
-static void print_address(struct sockaddr *, int type, const char *ctx);
+static void print_address(struct sockaddr *sa, int type, const char *ctx);
 static void event_logger(short what, struct ev_context_s *ctx);
 static void unchoke_writecb(struct bufferevent *bev, void *ctx);
 static void dns_logfn(int is_warn, const char *msg);
@@ -273,7 +273,7 @@ ev_free_context(struct ev_context_s *ctx)
 	bufferevent_free(ctx->partner):
 	bufferevent_free(ctx->bev);
 
-      ctx->st = ev_freed;
+      ctx->st = 0;
       ctx->partner = NULL;
       ctx->bev = NULL;
       if (ctx->evp_cipher_ctx && ctx->evp_decipher_ctx)
@@ -924,17 +924,17 @@ dns_logfn(int is_warn, const char *msg) {
 }
 
 static void
-print_address(struct sockaddr *buf, int type, const char *ctx)
+print_address(struct sockaddr *sa, int type, const char *ctx)
 {
   u8 out[128];
 
   switch (type) {
   case AF_INET:
-    if (evutil_inet_ntop(type, buf, (char*)out, sizeof(out)) == NULL)
+    if (evutil_inet_ntop(type, sa, (char*)out, sizeof(out)) == NULL)
       goto err;
     break;
   case AF_INET6:
-    if (evutil_inet_ntop(type, (struct sockaddr*)buf, (void*)out, sizeof(out)) == NULL)
+    if (evutil_inet_ntop(type, sa, (void*)out, sizeof(out)) == NULL)
       goto err;
     break;
   default:

@@ -4,12 +4,12 @@
 ## SYNOPSIS
 
 ```console
-  % ./esocks -p2000 -k this-is-my-password,yo -s <your_server_ip>
-  % ./esocks -j2000 -k this-is-my-password,yo -s <your_server_ip>
+  % ./esocks -p2000 -s 192.168.0.153 -k this-is-my-password,yo
+  % ./esocks -j2000 -u 192.168.0.153 -s 127.0.0.1 -k this-is-my-password,yo
   % ss -4np state listening
 Netid  Recv-Q Send-Q                           Local Address:Port    Peer Address:Port
-tcp    0      128                                             *:2000               *:*          users:(("esocks",pid=28724,fd=3))
-tcp    0      128                                             *:1080               *:*          users:(("esocks",pid=28723,fd=3))
+tcp    0      128                              192.168.0.153:2000               *:*          users:(("esocks",pid=28724,fd=3))
+tcp    0      128                                  127.0.0.1:1080               *:*          users:(("esocks",pid=28723,fd=3))
   % curl --socks5 0.0.0.0:1080 google.com -v
 ```
 
@@ -30,7 +30,7 @@ tcp    0      128                                             *:1080            
 ## TODO
  - Make valgrind stop complaining about memory leak stuff. There seems nasty leaks around lru cache.
  - ~~Need a breakthrough in crpyto.c. Cannot figure out how to handle successive buffer.~~ Use stream ciphers instead of block ciphers.
- - key and intial vector for EVP_CIPHER_CTX is hard-coded now, so let's come up with some idea not do so.
+ - key and intial vector for EVP_CIPHER_CTX is hard-coded now, so let's come up with some idea not to do so.
 
 ## What the heck is this?
  I'm inspired by Tor project. You launch two servers on your local computer and a server somewhere safe. Two servers establish a _safe_ tunnel and you can access stuff without being afraid of eavesdroppers.<br/>

@@ -277,11 +277,11 @@ logfn(int is_warn, const char *msg) {
 static void
 test_resolve_cb(void)
 {
-  int err;
   struct event_base *base;
   struct evutil_addrinfo hints, *res;
   struct ev_context_s *ctx;
   struct bufferevent *partner;
+  int err;
 
   base = event_base_new();
   assert(base);
@@ -350,7 +350,7 @@ test_event_cb(void)
   memset(&ctx1, 0, sizeof(struct ev_context_s));
   what |= BEV_EVENT_EOF;
 
-  assert(bev0 && partner0 && bev0 && partner0);
+  assert(bev0 && partner0 && bev1 && partner1);
 
   ctx0.partner = partner0;
   ctx0.bev = bev0;
@@ -365,7 +365,7 @@ test_event_cb(void)
   memcpy(&ctx0.domain, "foooo", 5);
   eventcb(bev0, what, (void*)&ctx0);
 
-  assert(ctx0.st == ev_freed);
+  assert(ctx0.st == 0);
   assert(ctx0.bev == NULL);
   assert(ctx0.partner == NULL);
 
@@ -374,12 +374,58 @@ test_event_cb(void)
   memcpy(&ctx1.domain, "doooo", 5);
   eventcb(bev1, what, (void*)&ctx1);
 
-  assert(ctx1.st == ev_freed);
+  assert(ctx1.st == 0);
   assert(ctx1.bev == NULL);
   assert(ctx1.partner == NULL);
 
   event_base_dispatch(base);
   event_base_free(base);
+  test_ok("%s", __func__);
+}
+
+static void
+test_close_on_finished_writecb(void)
+{
+  static evutil_socket_t pair[2] = {0, 1};
+  struct event_base *base;
+  struct bufferevent *bev, *partner;
+  struct ev_context_s ctx;
+  struct timeval tv;
+  short what = 0x00;
+  u8 buffer[1024];
+  int i;
+
+  what |= BEV_EVENT_EOF;
+  for (i = 0; i < (int)sizeof(buffer); i++)
+    buffer[i] = i;
+
+  base = event_base_new();
+  bev = bufferevent_socket_new(base, pair[0], 0);
+  partner = bufferevent_socket_new(base, pair[1], 0);
+  memset(&ctx, 0, sizeof(ctx));
+
+  assert(bev && partner  && base);
+
+  ctx.partner = partner;
+  ctx.bev = bev;
+  ctx.event_handler = (bufferevent_data_cb*)handle_streamcb;
+
+  bufferevent_setcb(bev, NULL, NULL, eventcb, &ctx);
+  bufferevent_enable(partner, EV_WRITE|EV_READ);
+  bufferevent_write(partner, buffer, sizeof(buffer));
+  bufferevent_trigger_event(bev, what, 0);
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 300000;
+
+  event_base_loopexit(base, &tv);
+  event_base_dispatch(base);
+  event_base_free(base);
+
+  assert(ctx.st == 0);
+  assert(ctx.bev == NULL);
+  assert(ctx.partner == NULL);
+
   test_ok("%s", __func__);
 }
 
@@ -486,6 +532,7 @@ struct testcase testcases[] = {
   {"test_lru_validate_tail", test_lru_validate_tail},
   {"test_lru_remove_node",test_lru_remove_node},
   {"test_event_cb", test_event_cb},
+  {"test_close_on_finished_writecb", test_close_on_finished_writecb},
   {"test_resolve_cb", test_resolve_cb},
   {"test_lru_timeout_handler", test_lru_timeout_handler},
   {"test_crypto", test_crypto},
