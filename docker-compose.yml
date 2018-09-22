@@ -1,0 +1,14 @@
+version: '3'
+services:
+    remote:
+      ports:
+      - "1081:1081"
+      build:
+            context: .
+            dockerfile: docker/Dockerfile.remote
+    local:
+      ports:
+        - "1080:1080"
+      build:
+           context: .
+           dockerfile: docker/Dockerfile.local
