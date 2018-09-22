@@ -235,7 +235,7 @@ AC_CACHE_CHECK(
 	[for openssl],
 	[ac_cv_openssl],
 	[
-	LDFLAGS="-L$tryopenssl $LDFLAGS"
+	CPPFLAGS="-I$tryopenssl $CPPFLAGS"
 	LIBS="-lcrypto $LIBS"
 	AC_LINK_IFELSE(
 		[AC_LANG_PROGRAM(

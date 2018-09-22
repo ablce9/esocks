@@ -83,7 +83,7 @@ struct settings {
 extern struct settings settings;
 
 typedef enum {
-  SUCCESSED = 0,
+  SUCCEED = 0,
   GENERAL_FAILURE,
   METHOD_NOT_ALLOWED,
   NETWORK_UNREACHABLE,
