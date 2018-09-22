@@ -7,13 +7,12 @@
 #include <openssl/err.h>
 
 #define crypto_init() \
-  do { CRYPTO_malloc_init(); \
+  do { OPENSSL_malloc_init(); \
     OpenSSL_add_all_algorithms(); ERR_load_crypto_strings(); \
 } while(0)
 
 #define crypto_shutdown() \
-  do { OBJ_cleanup(); EVP_cleanup(); \
-    CRYPTO_cleanup_all_ex_data(); ERR_remove_thread_state(NULL); \
+  do { OBJ_cleanup(); EVP_cleanup(); CRYPTO_cleanup_all_ex_data(); \
     ERR_free_strings(); } while(0)
 
 int openssl_encrypt(EVP_CIPHER_CTX *ctx, u8 *out, u8 *in, int ilen);
