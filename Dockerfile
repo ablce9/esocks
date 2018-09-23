@@ -33,6 +33,6 @@ COPY . /app
 
 RUN ./autogen.sh && ./configure --with-openssl=/usr/local --with-libevent=/usr/local && make install
 
-EXPOSE 1080
+EXPOSE 1080 1081
 
 CMD $COMMAND

@@ -5,10 +5,14 @@ services:
       - "1081:1081"
       build:
             context: .
-            dockerfile: docker/Dockerfile.remote
+            dockerfile: ./Dockerfile
+      command: ["esocks", "-p1081"]
     local:
       ports:
         - "1080:1080"
       build:
            context: .
-           dockerfile: docker/Dockerfile.local
+           dockerfile: ./Dockerfile
+      command: ["esocks", "-j1081", "-p1080", "-u172.17.0.1"]
+networks:
+  default:
