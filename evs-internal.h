@@ -50,10 +50,10 @@
 /* socks version  */
 # define SOCKS_VERSION 5
 
-# define SOCKSNOAUTH       0
-# define GSSAPI            1
-# define SOCKSAUTHPASSWORD 2
-# define IANASSIGNED       3 /* curl requests this */
+// # define SOCKSNOAUTH       0
+// # define GSSAPI            1
+// # define SOCKSAUTHPASSWORD 2
+// # define IANASSIGNED       3
 
 #define SOCKS_MAX_BUFFER_SIZE 4096
 
@@ -83,7 +83,7 @@ struct settings {
 extern struct settings settings;
 
 typedef enum {
-  SUCCESSED = 0,
+  SUCCEED = 0,
   GENERAL_FAILURE,
   METHOD_NOT_ALLOWED,
   NETWORK_UNREACHABLE,

@@ -4,26 +4,21 @@ ENV LIBEVENT_VERSION 2.1.8
 
 ENV OPENSSL_VERSION 1_1_0-stable
 
-RUN apt update -y && apt upgrade -y
+RUN apt-get update -y && apt-get upgrade -y
 
-RUN apt install -y git-core build-essential wget
+RUN apt-get install -y git-core build-essential wget
 
 RUN set -x \
-    &&  apt install -y \
+    &&  apt-get install -y \
      --no-install-recommends \
       make automake autoconf \
-    && apt autoclean -y \
+    && apt-get autoclean -y \
     && wget \
     https://github.com/libevent/libevent/releases/download/release-$LIBEVENT_VERSION-stable/libevent-$LIBEVENT_VERSION-stable.tar.gz \
-    https://github.com/libevent/libevent/releases/download/release-$LIBEVENT_VERSION-stable/libevent-$LIBEVENT_VERSION-stable.tar.gz.asc \
     https://github.com/openssl/openssl/archive/OpenSSL_$OPENSSL_VERSION.tar.gz \
-    # Might fail here depending on your network policies...
-    # && gpg --keyserver pgp.mit.edu --recv 8EF8686D \
-    # && gpg --verify ./libevent-$LIBEVENT_VERSION-stable.tar.gz.asc \
     && tar xzvf libevent-$LIBEVENT_VERSION-stable.tar.gz && cd libevent-$LIBEVENT_VERSION-stable \
-    && ./configure && make && make install && ldconfig \
-    && cd ../ && tar xvf OpenSSL_$OPENSSL_VERSION.tar.gz && cd ./openssl-OpenSSL_$OPENSSL_VERSION && ./config --prefix=/usr/local && make install_sw && ldconfig
-
+    && ./configure && make && make install \
+    && cd ../ && tar xvf OpenSSL_$OPENSSL_VERSION.tar.gz && cd ./openssl-OpenSSL_$OPENSSL_VERSION && ./config --prefix=/usr/local && make install_sw
 
 WORKDIR /app
 
