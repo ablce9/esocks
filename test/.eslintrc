@@ -1,0 +1,21 @@
+{
+    "rules": {
+	"indent": ["error", 4],
+	"linebreak-style": ["error", "unix"],
+	"semi": ["error", "always"],
+	"curly": ["error"],
+	"eqeqeq": ["error"],
+	"brace-style": ["error", "1tbs"],
+	"no-loop-func": ["error"],
+	"no-redeclare": ["error"],
+	"no-unused-expressions": ["error"],
+	"no-use-before-define": ["error"],
+	"no-undef": ["error"],
+	"no-constant-condition": ["error"],
+	"no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+    },
+    "env": {
+	"node": true,
+	"es6": true
+    }
+}

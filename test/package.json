@@ -4,11 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "mocha ./*.js"
+    "test": "mocha ./*.js",
+    "lint": "eslint --fix -c .eslintrc ./*.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "eslint": "^5.6.1",
     "mocha": "^5.2.0"
   }
 }
