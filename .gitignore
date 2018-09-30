@@ -22,3 +22,5 @@ Makefile
 Makefile.in
 configure
 testapp
+node_modules/
+package-lock.json
