@@ -15,11 +15,7 @@ RUN set -x \
     && apt-get autoclean -y \
     && wget \
     https://github.com/libevent/libevent/releases/download/release-$LIBEVENT_VERSION-stable/libevent-$LIBEVENT_VERSION-stable.tar.gz \
-    https://github.com/libevent/libevent/releases/download/release-$LIBEVENT_VERSION-stable/libevent-$LIBEVENT_VERSION-stable.tar.gz.asc \
     https://github.com/openssl/openssl/archive/OpenSSL_$OPENSSL_VERSION.tar.gz \
-    # Might fail here depending on your network policies...
-    # && gpg --keyserver pgp.mit.edu --recv 8EF8686D \
-    # && gpg --verify ./libevent-$LIBEVENT_VERSION-stable.tar.gz.asc \
     && tar xzvf libevent-$LIBEVENT_VERSION-stable.tar.gz && cd libevent-$LIBEVENT_VERSION-stable \
     && ./configure && make && make install \
     && cd ../ && tar xvf OpenSSL_$OPENSSL_VERSION.tar.gz && cd ./openssl-OpenSSL_$OPENSSL_VERSION && ./config --prefix=/usr/local && make install_sw
