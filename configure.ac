@@ -59,6 +59,7 @@ AC_ARG_ENABLE(static,
 
 if test "x$enable_static" = "xyes"; then
    CFLAGS="-static $CFLAGS"
+   LIBS="-ldl -pthread $LIBS"
 fi
 
 dnl Checks for header files.
@@ -131,8 +132,6 @@ if test "$ac_cv_sol_tcp" = "yes"; then
    AC_DEFINE([HAVE_TCP_FASTOPEN], 1, [Define to 1 if support tcp fastopen])
    AC_DEFINE([HAVE_TCP_NODELAY], 1, [Define to 1 if support tcp nodelay])
 fi
-
-LIBS="-ldl"
 
 trylibeventdir=""
 AC_ARG_WITH(libevent,
@@ -220,7 +219,7 @@ if test $ac_cv_libevent_dir != "(system)"; then
   fi
 fi
 
-tryopenssl=""
+tryopenssl="/usr/local"
 AC_ARG_WITH(openssl,
 	[ --with-openssl=PATH Specify a path to openssl],
 	[
@@ -251,9 +250,6 @@ AC_CACHE_CHECK(
 		[ac_cv_openssl=no]
 	)]
 )
-if ! test "$ac_cv_openssl" = "yes"; then
-	AC_MSG_ERROR([OpenSSL is not installed. You should install OpenSSL.])
-fi
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
