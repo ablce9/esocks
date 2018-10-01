@@ -14,5 +14,3 @@ services:
            context: .
            dockerfile: ./Dockerfile
       command: ["esocks", "-j1081", "-p1080", "-u${ESOCKS_ADDR}"]
-networks:
-  default:
