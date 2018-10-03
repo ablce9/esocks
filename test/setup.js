@@ -10,9 +10,7 @@ function echoServer (options) {
         throw err;
     });
     server.on('connection', function (conn) {
-        conn.on('data', function (data) {
-            conn.write(data);
-        });
+        conn.pipe(conn);
     });
     server.listen(options, function() {
         console.log('sandbox server is up and running');

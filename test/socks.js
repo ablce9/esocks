@@ -1,9 +1,9 @@
 'use strict';
 
-var net = require('net');
+const net = require('net');
 // var tls = require('tls');
 // var URL = require('url').URL;
-var EventEmitter = require('events').EventEmitter;
+const EventEmitter = require('events').EventEmitter;
 
 var socks5Command = {
     connect:   0x01,
@@ -17,17 +17,17 @@ var aType = {
     ipv6:   0x04,
 };
 
-// var socks5Reply = {
-//     granted:             0x00,
-//     failure:             0x01,
-//     notallowed:          0x02,
-//     networkunreachable:  0x03,
-//     hostunreachable:     0x04,
-//     connectionrefused:   0x05,
-//     ttlexpired:          0x06,
-//     commandnotsupported: 0x07,
-//     addressnotsupported: 0x08,
-// };
+var socks5Reply = {
+    granted:             0x00,
+    failure:             0x01,
+    notallowed:          0x02,
+    networkunreachable:  0x03,
+    hostunreachable:     0x04,
+    connectionrefused:   0x05,
+    ttlexpired:          0x06,
+    commandnotsupported: 0x07,
+    addressnotsupported: 0x08,
+};
 
 const init      =  1 << 0;
 const connected =  1 << 1;
@@ -37,25 +37,29 @@ const destroyed =  1 << 4;
 const waiting   =  1 << 5;
 
 
-module.exports.parseAddress = ({address}) => {
-    var ret = net.isIP(address);
+const parseAddress = (address) => {
+    let ret = net.isIP(address);
     let ip = 0;
     switch (ret) {
-        case 0:
-            ip = new Error('invalid address');
-            break;
-        case 4:
-            var raw = address.split('.').map(e => parseInt(e, 10));
-            ip += raw[0] << 24;
-            ip += raw[1] << 16 & 0xff;
-            ip += raw[2] << 8  & 0xff;
-            ip += raw[3]       & 0xff;
-            break;
-        case 6:
-            // TODO
-            break;
+    case 0:
+        // In this case, ip is not ip but domain.
+        ip = address;
+        ret = aType.domain;
+        break;
+    case 4:
+        let raw = address.split('.').map(e => parseInt(e, 10));
+        ip += raw[0] << 24;
+        ip += raw[1] << 16 & 0xff;
+        ip += raw[2] << 8  & 0xff;
+        ip += raw[3]       & 0xff;
+        ret = aType.ipv4;
+        break;
+    case 6:
+        // TODO
+        ret = aType.ipv6;
+        break;
     };
-    return ip;
+    return [ip, ret];
 };
 
 class Socks5Client extends EventEmitter {
@@ -99,9 +103,9 @@ class Socks5Client extends EventEmitter {
             };
             throw err;
         };
-        let hostname, port, buf;
-        hostname = this._options.hostname;
-        port = this._options.port;
+        let buf;
+        const hostname = this._options.hostname;
+        const port = this._options.port;
 
         if (!this._socket)
             this._socket = new net.Socket();
@@ -123,45 +127,32 @@ class Socks5Client extends EventEmitter {
         });
         this._socket.once('connect', () => {
             this.state |= (connected | writing | reading);
-            // Negotiate to socks5 server.
             // No support for socks authentications.
             buf = new Buffer([0x05, 0x01, 0x00]);
             this._socket.write(buf);
         });
         this._socket.once('data', (data) => {
             if (this.state & init)
-                if (!(data[0] === 0x05 && data[1] === 0x00)) {
-                    console.log(data);
+                if (!(data[0] === 0x05 && data[1] === socks5Reply.granted)) {
                     done(new Error('Wrong response from server'));
                     this.state &= init;
                     this.state |= destroyed;
-
-                } else if (this.state & connected)
+                } else if (this.state & connected) {
                     console.log('have some data for you ', data);
-
+                    if (data[0] === 0x05 && data[1] !== socks5Reply.granted)
+                        done(new Error("socks5 error"));
+                };
 
             if (this.state & writing) {
                 // TODO: v6
-                switch (net.isIP) {
-                    case 4:
-                        this._options.atype = aType.ipv4;
-                        break;
-                    case 6:
-                        this._options.atype.atype = aType.ipv6;
-                        throw new Error('not supported');
-                        break;
-                    case 0:
-                        this._options.atype = domain;
-                        break;
-                };
-                const atype = this._options.atype;
-                var destAddr = options.destAddr, destPort = options.destPort || 80;
-
+                let destAddr = options.destAddr, destPort = options.destPort || 80;
+                let addrinfo = parseAddress(destAddr);
+                const atype = addrinfo[1];
+                const p = [destPort >> 8, destPort & 0xff];
+                let offset = 0;
                 if (atype === aType.ipv4) {
-                    buf = Buffer.allocUnsafe(4+4+2);
-                    var a = destAddr.split('.').map(e => parseInt(e, 10));
-                    var p = [destPort >> 8, destPort & 0xff];
-                    let offset = 0;
+                    buf = Buffer.allocUnsafe(10);
+                    let a = destAddr.split('.').map(e => parseInt(e, 10));
                     buf.writeUInt8(0x05, offset);
                     offset++;
                     buf.writeUInt8(this._options.socks5Command, offset);
@@ -179,6 +170,31 @@ class Socks5Client extends EventEmitter {
                         offset++;
                     });
                     this.state &= init;
+                }
+                if (atype === aType.ipv6) {
+                    // WIP
+                }
+                if (atype === aType.domain) {
+                    const domainbuf = Buffer.from(destAddr);
+                    buf = Buffer.allocUnsafe(11+domainbuf.length);
+                    buf.writeUInt8(0x05, offset);
+                    offset++;
+                    buf.writeUInt8(this._options.socks5Command, offset);
+                    offset++;
+                    buf.writeUInt8(0x00, offset);
+                    offset++;
+                    buf.writeUInt8(atype, offset);
+                    offset++;
+                    buf.writeUInt8(domainbuf.length, offset);
+                    offset++;
+                    domainbuf.forEach(e => {
+                        buf.writeUInt8(e, offset);
+                        offset++;
+                    });
+                    p.forEach(e => {
+                        buf.writeUInt8(e, offset);
+                        offset++;
+                    });
                 }
                 this._socket.write(buf);
 

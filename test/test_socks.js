@@ -1,5 +1,4 @@
 const assert = require('assert');
-const net = require('net');
 
 const mocha = require('mocha');
 
@@ -19,15 +18,15 @@ var defaultSandboxServerOptions = {
 };
 
 mocha.describe('socks5', () => {
-    let a, b;
+    const procs = [];
     setup.echoServer(defaultSandboxServerOptions);
     mocha.before(() => {
-        a = setup.setUpServer(setup.getEsocks(), ['-p', '1081']);
-        b = setup.setUpServer(setup.getEsocks(), ['-j', '1081']);
+        procs.push(setup.setUpServer(setup.getEsocks(), ['-p', '1081']));
+        procs.push(setup.setUpServer(setup.getEsocks(), ['-j', '1081']));
     });
     mocha.after(() => {
         setTimeout(() => {
-            [a, b].forEach((pid) => {
+            procs.forEach((pid) => {
                 process.kill(pid, 'SIGTERM');
             });
         }, 1000);
@@ -35,30 +34,19 @@ mocha.describe('socks5', () => {
 
     mocha.it('connects with ipv4', () => {
         socks.Socks5Client.createConnection(defaultSocksOptions)
-             .then((conn) => {
-                 assert.ok(conn !== null);
-                 const buf = Buffer.allocUnsafe(1024);
-                 conn.write(buf);
-             });
-    });
-    mocha.it('connects with ipv6', () => {
-                const options = Object.assign({}, {destAddr: 'fe80::2fca:e754:769d:a8f9'},
-                                              defaultSandboxServerOptions);
-        socks.Socks5Client.createConnection(options)
-             .then((conn) => {
-                 assert.ok(conn !== null);
-                 const buf = Buffer.allocUnsafe(1024);
-                 conn.write(buf);
-             });
+            .then((conn) => {
+                assert.ok(conn !== null);
+                const buf = Buffer.allocUnsafe(1024);
+                conn.write(buf);
+            });
     });
     mocha.it('connects with domain', () => {
-        const options = Object.assign({}, {destAddr: 'google.com'},
-                                      defaultSandboxServerOptions);
+        const options = Object.assign({}, defaultSocksOptions,
+            {destAddr: 'google.com', destPort: 80});
         socks.Socks5Client.createConnection(options)
-             .then((conn) => {
-                 assert.ok(conn !== null);
-                 const buf = Buffer.allocUnsafe(1024);
-                 conn.write(buf);
-             });
+            .then((conn) => {
+                assert.ok(conn !== null);
+                conn.write('GET / HTTP/1.1');
+            });
     });
 });
