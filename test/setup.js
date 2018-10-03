@@ -1,7 +1,23 @@
 const assert = require('assert');
+const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
+
+function echoServer (options) {
+    const server = new net.Server();
+    server.on('error', function (err) {
+        throw err;
+    });
+    server.on('connection', function (conn) {
+        conn.on('data', function (data) {
+            conn.write(data);
+        });
+    });
+    server.listen(options, function() {
+        console.log('sandbox server is up and running');
+    });
+}
 
 function getEsocks () {
     const bin = path.join(process.cwd(), '../esocks');
@@ -36,4 +52,5 @@ function setUpServer (bin, args, options) {
 module.exports = {
     getEsocks: getEsocks,
     setUpServer: setUpServer,
+    echoServer: echoServer,
 };

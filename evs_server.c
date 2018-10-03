@@ -411,7 +411,6 @@ socks_initcb(struct bufferevent *bev, void *ctx)
 
   if (dec_buf[0] == 5)
     {
-      // Frist negotiation
       // enc
       u8 p[2] = {5, 0};
 
@@ -449,7 +448,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   size_t buf_size = evbuffer_get_length(src), dlen, buflen;
   int res, try;
   u8 buf[buf_size], portbuf[2], buf4[4],
-    domain[256], resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0},
+    domain[256], socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0},
     dec_buf[SOCKS_MAX_BUFFER_SIZE];
   u16 port;
   char tmp4[SOCKS_INET_ADDRSTRLEN];
@@ -457,7 +456,6 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
   // Todo: Support IPv6
   static const char fmt4[] = "%d.%d.%d.%d";
-  u8 msg[2] = {5, 1};
 
   // dec
   evbuffer_copyout(src, buf, buf_size);
@@ -481,7 +479,8 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	log_warn("unkonw command=%d", dec_buf[1]);
 	context->st = ev_destroy;
 	// enc
-	bufferevent_write(bev, msg, 2);
+	socks_reply[1] = GENERAL_FAILURE;
+	bufferevent_write(bev, socks_reply, 10);
 	bufferevent_disable(bev, EV_WRITE);
       }
     }
@@ -516,10 +515,10 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 				     sizeof(struct sockaddr_in)) != 0)
 	{
 	  log_e("connect: failed to connect");
-	  resp[1] = 4;
+	  socks_reply[1] = CONNECTION_REFUSED;
 
 	  // enc
-	  if (bufferevent_write(bev, resp, 10) != 0)
+	  if (bufferevent_write(bev, socks_reply, 10) != 0)
 	    {
 	      destroycb(bev, context);
 	      return;
@@ -532,9 +531,9 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       break;
     case IPV6:
       log_e("IPv6 is not supported yet");
-      resp[1] = 4;
+      socks_reply[1] = ADDRESS_TYPE_NOT_SUPPORTED;
       // enc
-      if (bufferevent_write(bev, resp, 10) != 0)
+      if (bufferevent_write(bev, socks_reply, 10) != 0)
 	{
 	  destroycb(bev, context);
 	  return;
@@ -596,7 +595,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   if (context->st == ev_connected)
     {
       u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-      int outl = ev_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
+      int outl = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
 
       if (bufferevent_write(bev, enc_buf, outl) < 0)
 	{
