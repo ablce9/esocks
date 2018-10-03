@@ -1,14 +1,14 @@
 {
   "name": "test",
   "version": "1.0.0",
-  "description": "",
+  "description": "Test scripts for esocks",
   "main": "index.js",
   "scripts": {
-    "test": "mocha ./*.js",
+    "test": "mocha test_*.js",
     "lint": "eslint --fix -c .eslintrc ./*.js"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "shunsuketamiya@posteo.net",
+  "license": "MIT",
   "dependencies": {
     "eslint": "^5.6.1",
     "mocha": "^5.2.0"
