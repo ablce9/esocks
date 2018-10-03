@@ -18,7 +18,9 @@ RUN set -x \
     https://github.com/openssl/openssl/archive/OpenSSL_$OPENSSL_VERSION.tar.gz \
     && tar xzvf libevent-$LIBEVENT_VERSION-stable.tar.gz && cd libevent-$LIBEVENT_VERSION-stable \
     && ./configure && make && make install \
-    && cd ../ && tar xvf OpenSSL_$OPENSSL_VERSION.tar.gz && cd ./openssl-OpenSSL_$OPENSSL_VERSION && ./config --prefix=/usr/local && make install_sw
+    && cd ../ && tar xvf OpenSSL_$OPENSSL_VERSION.tar.gz && cd ./openssl-OpenSSL_$OPENSSL_VERSION && ./config --prefix=/usr/local && make install_sw \
+    && cd .. && rm -rf libevent-$LIBEVENT_VERSION-stable.tar.gz libevent-$LIBEVENT_VERSION-stable \
+       OpenSSL_$OPENSSL_VERSION.tar.gz openssl-OpenSSL_$OPENSSL_VERSION
 
 WORKDIR /app
 
