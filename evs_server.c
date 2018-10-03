@@ -183,8 +183,12 @@ run_srv(void)
   event_free(sigpipe_event);
   event_free(listen_event);
   event_base_free(base);
-  evdns_base_free(dns_base, 0);
-  lru_purge_all(&node);
+
+  if (!settings.proxy) {
+    evdns_base_free(dns_base, 0);
+    lru_purge_all(&node);
+  }
+
   crypto_shutdown();
 
   exit(0);
