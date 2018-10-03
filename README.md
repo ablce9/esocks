@@ -24,7 +24,7 @@ tcp    0      128                                  127.0.0.1:1080               
 
 ## DEPENDENCIES
  - [libevent(release-2.1.8-stable)](http://libevent.org)
- - [OpenSSL(OpenSSL_1_0_2-stable)](https://www.openssl.org)
+ - [OpenSSL(OpenSSL_1_1_0-stable)](https://www.openssl.org)
  - autotools(whatever version. I didn't pay attention to the version... newer is better.)
 
 ## TODO
