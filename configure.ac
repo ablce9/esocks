@@ -57,9 +57,11 @@ fi
 AC_ARG_ENABLE(static,
 	[AS_HELP_STRING([--enable-static],[build static binary])])
 
+LIBS="-ldl"
+
 if test "x$enable_static" = "xyes"; then
    CFLAGS="-static $CFLAGS"
-   LIBS="-ldl -pthread $LIBS"
+   LIBS="-pthread $LIBS"
 fi
 
 dnl Checks for header files.
@@ -219,7 +221,7 @@ if test $ac_cv_libevent_dir != "(system)"; then
   fi
 fi
 
-tryopenssl="/usr/local"
+tryopenssl=""
 AC_ARG_WITH(openssl,
 	[ --with-openssl=PATH Specify a path to openssl],
 	[
@@ -235,20 +237,27 @@ AC_CACHE_CHECK(
 	[ac_cv_openssl],
 	[
 	CPPFLAGS="-I$tryopenssl/include $CPPFLAGS"
-	LDFALGS="-I$tryopenssl/lib"
+	LDFLAGS="-L$tryopenssl/lib $LDFLAGS"
 	LIBS="-lcrypto $LIBS"
 	AC_LINK_IFELSE(
 		[AC_LANG_PROGRAM(
 			[[
 			#include <openssl/evp.h>
+			#include <openssl/err.h>
 			]],
 			[[
+			OPENSSL_malloc_init();
+			ERR_load_crypto_strings();
 			OpenSSL_add_all_algorithms();
 			]],
 		)],
 		[ac_cv_openssl=yes],
 		[ac_cv_openssl=no]
 	)]
+	if test $ac_cv_openssl = no; then
+	   AC_MSG_ERROR([You have wrong version of OpenSSL.
+	   ])
+	fi
 )
 
 AC_CONFIG_FILES([Makefile])
