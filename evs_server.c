@@ -55,7 +55,7 @@ run_srv(void)
   struct event *signal_event, *sigpipe_event, *listen_event;
   struct dns_cache_config cache_config;
   struct sockaddr_in sin, proxy_sin;
-  struct timeval dns_cache_tval = {settings.dns_cache_tval, 0}; // 5 minutes
+  struct timeval dns_cache_tval = {settings.dns_cache_tval, 0};
 
   int fd;
   void *proxy = NULL;
@@ -233,7 +233,10 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
     }
 
   if (fd == EAGAIN || fd == EWOULDBLOCK || fd == ECONNABORTED || fd == EINTR)
-    log_warn("fd error code=%d", fd);
+    {
+      log_warn("fd error code=%d", fd);
+      evutil_closesocket(new_fd);
+    }
 }
 
 static struct ev_context_s *
@@ -269,7 +272,7 @@ ev_new_context(void)
 static void
 ev_free_context(struct ev_context_s *ctx)
 {
-  if (!ctx && ctx->st != 0)
+  if (ctx != NULL && ctx->st == ev_destroy)
     {
       log_d(DEBUG, "left with status=%d", ctx->st);
 
@@ -375,7 +378,7 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	  if (evbuffer_get_length(bufferevent_get_output(partner)))
 	    {
 	      log_d(DEBUG, "set to close_on_finished_writecb");
-	      context->st = ev_freed;
+	      context->st = ev_destroy;
 	      bufferevent_setcb(partner, NULL,
 				close_on_finished_writecb, eventcb, context);
 	      bufferevent_disable(partner, EV_READ);
@@ -386,7 +389,7 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 	       * side; close it! */
 	      log_d(DEBUG, "nothing to write and let partner go");
 	      bufferevent_free(partner);
-	      context->st = ev_freed;
+	      context->st = ev_destroy;
 	    }
 	}
 
@@ -408,7 +411,6 @@ socks_initcb(struct bufferevent *bev, void *ctx)
   evbuffer_drain(src, buf_size);
 
   ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
-
   if (dec_buf[0] == 5)
     {
       // enc
@@ -416,20 +418,18 @@ socks_initcb(struct bufferevent *bev, void *ctx)
 
       outl = ev_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
 
-      if (bufferevent_write(bev, enc_buf, outl) != 0)
-	{
-	  log_e("bufferevent_write");
-	  destroycb(bev, context);
-	  return;
-	}
-
+      bufferevent_write(bev, enc_buf, outl);
       context->st = ev_init;
-
       bufferevent_setcb(bev, parse_header_cb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-    } else
-    destroycb(bev, context);
+    }
+  else
+    {
+      context->st = ev_destroy;
+      ev_free_context(context);
+    }
+
 }
 
 enum {
@@ -451,7 +451,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
     domain[256], socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0},
     dec_buf[SOCKS_MAX_BUFFER_SIZE];
   u16 port;
-  char tmp4[SOCKS_INET_ADDRSTRLEN];
+  char tmpl4[SOCKS_INET_ADDRSTRLEN];
   lru_node_t *cached;
 
   // Todo: Support IPv6
@@ -463,7 +463,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
   ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
-  /* Check if version is correct and status is equal to INIT */
+  // Check if version is correct and status is equal to ev_init
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
     {
       /* Parse socks header */
@@ -476,7 +476,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	context->st = ev_destroy;
 	break;
       default:
-	log_warn("unkonw command=%d", dec_buf[1]);
+	log_warn("unkonw command: %d", dec_buf[1]);
 	context->st = ev_destroy;
 	// enc
 	socks_reply[1] = GENERAL_FAILURE;
@@ -485,23 +485,26 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       }
     }
 
-  if (context->st != ev_init) return;
+  if (context->st != ev_init) {
+    ev_free_context(context);
+    return;
+  }
 
   // Connect to the server
   switch(dec_buf[3])
     {
     case IPV4:
+      log_i("IPv4: connect immediate");
       memcpy(buf4, dec_buf + 4, sizeof(buf4));
-      evutil_snprintf(tmp4, sizeof(tmp4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
-
+      evutil_snprintf(tmpl4, sizeof(tmpl4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
       memset(&sin, 0, sizeof(sin));
-      res = evutil_inet_pton(AF_INET, (char*)tmp4, &sin.sin_addr);
-
-      if (res != 1)
+      res = evutil_inet_pton(AF_INET, (char*)tmpl4, &sin.sin_addr);
+      if (res <= 0)
 	{
-	  log_e("failed to resolve addr");
-	  destroycb(bev, context);
-	  return;
+	  log_e("inet_pton: failed to resolve addr");
+	  socks_reply[1] = HOST_UNREACHABLE;
+	  bufferevent_write(bev, socks_reply, 10);
+	  break;
 	}
 
       memcpy(portbuf, dec_buf + 8, 2);
@@ -516,28 +519,18 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	{
 	  log_e("connect: failed to connect");
 	  socks_reply[1] = CONNECTION_REFUSED;
-
-	  // enc
-	  if (bufferevent_write(bev, socks_reply, 10) != 0)
-	    {
-	      destroycb(bev, context);
-	      return;
-	    }
+	  context->st = ev_destroy;
+	  bufferevent_write(bev, socks_reply, 10);
 	}
-
-      context->st = ev_connected;
-
-      log_i("IPv4: connect immediate");
+      else
+	context->st = ev_connected;
       break;
     case IPV6:
       log_e("IPv6 is not supported yet");
       socks_reply[1] = ADDRESS_TYPE_NOT_SUPPORTED;
       // enc
-      if (bufferevent_write(bev, socks_reply, 10) != 0)
-	{
-	  destroycb(bev, context);
-	  return;
-	}
+      bufferevent_write(bev, socks_reply, 10);
+      context->st = ev_destroy;
       break;
     case DOMAINN:
       dlen = (u8) dec_buf[4];
@@ -579,7 +572,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	      context->st = ev_connected;
 	      break;
 	    }
-
+	    context->st = ev_destroy;
 	  }
 
 	}
@@ -597,16 +590,12 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
       int outl = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
 
-      if (bufferevent_write(bev, enc_buf, outl) < 0)
-	{
-	  destroycb(bev, context);
-	  return;
-	}
-
+      bufferevent_write(bev, enc_buf, outl);
       bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
     }
-
+  if (context->st == ev_destroy)
+    ev_free_context(context);
 }
 
 static void
@@ -645,16 +634,17 @@ next_readcb(struct bufferevent *bev, void *ctx)
       if (bufferevent_write(partner, dec_buf, outl) < 0)
 	{
 	  log_e("bufferevent_write");
-	  destroycb(bev, context);
-	  return;
+	  context->st = ev_destroy;
 	}
+      else
+	{
+	  context->reversed = true;
+	  context->st = ev_connected;
 
-      context->reversed = true;
-      context->st = ev_connected;
-
-      /* set callbacks and wait for server response */
-      bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
-      bufferevent_enable(partner, EV_WRITE|EV_READ);
+	  /* set callbacks and wait for server response */
+	  bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
+	  bufferevent_enable(partner, EV_WRITE|EV_READ);
+	}
     }
 }
 
@@ -685,22 +675,23 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
       if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
 	  log_e("failed to write");
-	  destroycb(partner, context);
-	  return;
+	  context->st = ev_destroy;
 	}
-
-      // Keep doing proxy until there is no data
-      bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
-      bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-      dst = bufferevent_get_output(partner);
-
-      if (evbuffer_get_length(dst) >= MAX_OUTPUT)
+      else
 	{
-	  log_d(DEBUG, "Setting watermark bufsize=%ld", evbuffer_get_length(dst));
-	  bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb, context);
-	  bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
-	  bufferevent_disable(bev, EV_READ);
+	  // Keep doing proxy until there is no data
+	  bufferevent_setcb(bev, handle_streamcb, NULL, eventcb, context);
+	  bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+	  dst = bufferevent_get_output(partner);
+
+	  if (evbuffer_get_length(dst) >= MAX_OUTPUT)
+	    {
+	      log_d(DEBUG, "Setting watermark bufsize=%ld", evbuffer_get_length(dst));
+	      bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb, context);
+	      bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
+	      bufferevent_disable(bev, EV_READ);
+	    }
 	}
     }
 }
@@ -839,12 +830,6 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
   if (ai)
     evutil_freeaddrinfo(ai);
-}
-
-void
-destroycb(struct bufferevent *bev, struct ev_context_s *ctx)
-{
-  ev_free_context(ctx);
 }
 
 void

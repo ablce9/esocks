@@ -40,7 +40,8 @@ settings_init(void)
   settings.rate_wlimit = 20000;
   settings.rate_rlimit = 20000;
   settings.proxy = NULL;
-  settings.dns_cache_tval = 300;
+  // TODO: dns ttl
+  settings.dns_cache_tval = 6500;
 
   // TODO: refactor, this ain't good for security!
   const u8 key16[16] = {
@@ -71,13 +72,12 @@ void usage() {
 	 "  -k  password\n"
 	 "  -c  cipher name, defualt aes-256-cfb\n"
 	 "  -n  workers\n"
-	 "  -t  timeout for connections, default 300 seconds\n"
+	 "  -t  timeout for connections, default 6500 seconds\n"
 	 "  -g  nameserver\n"
 	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
 	 "  -r  limit reading rate in bytes, default none\n"
 	 "  -w  limit writing rate in bytes, default none\n"
-	 "  -d   dns cache timeout, default 300\n"
-	 );
+	 "  -d   dns cache timeout, default 300\n");
   exit(1);
 }
 

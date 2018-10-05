@@ -79,12 +79,13 @@ streamcb(struct bufferevent *bev, void *ctx)
       if (bufferevent_write(partner, dec_buf, outl) != 0)
 	{
 	  log_e("failed to write");
-	  destroycb(partner, context);
-	  return;
+	  context->st = ev_destroy;
 	}
-
-      // Keep doing proxy until there is no data
-      bufferevent_setcb(bev, streamcb, NULL, eventcb, context);
-      bufferevent_enable(bev, EV_READ|EV_WRITE);
+      else
+	{
+	  // Keep doing proxy until there is no data
+	  bufferevent_setcb(bev, streamcb, NULL, eventcb, context);
+	  bufferevent_enable(bev, EV_READ|EV_WRITE);
+	}
     }
 }

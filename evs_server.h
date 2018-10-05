@@ -46,7 +46,6 @@ void run_srv(void);
 void resolve(struct ev_context_s *s);
 void err_writecb(struct bufferevent *bev, void *ctx);
 void close_on_finished_writecb(struct bufferevent *bev, void *ctx);
-void destroycb(struct bufferevent *bev, struct ev_context_s *ctx);
 void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr);
 void fast_streamcb(struct bufferevent *bev, void *ctx);
 void handle_streamcb(struct bufferevent *bev, void *ctx);
