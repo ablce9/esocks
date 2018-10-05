@@ -71,13 +71,13 @@ void usage() {
 	 "  -j  server port\n"
 	 "  -k  password\n"
 	 "  -c  cipher name, defualt aes-256-cfb\n"
-	 "  -n  workers\n"
-	 "  -t  timeout for connections, default 6500 seconds\n"
-	 "  -g  nameserver\n"
+	 // "  -n  workers\n"
+	 "  -t  timeout for connections, default 300 seconds\n"
+	 //"  -g  nameserver\n"
 	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
-	 "  -r  limit reading rate in bytes, default none\n"
-	 "  -w  limit writing rate in bytes, default none\n"
-	 "  -d   dns cache timeout, default 300\n");
+	 //"  -r  limit reading rate in bytes, default none\n"
+	 //"  -w  limit writing rate in bytes, default none\n"
+	 "  -d   dns cache timeout, default 6500\n");
   exit(1);
 }
 
