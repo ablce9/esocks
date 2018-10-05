@@ -269,7 +269,7 @@ ev_new_context(void)
 static void
 ev_free_context(struct ev_context_s *ctx)
 {
-  if (ctx != NULL)
+  if (!ctx && ctx->st != 0)
     {
       log_d(DEBUG, "left with status=%d", ctx->st);
 
@@ -855,7 +855,7 @@ close_on_finished_writecb(struct bufferevent *bev, void *ctx)
   if (evbuffer_get_length(evb) == 0)
     {
       log_d(DEBUG, "close_on_finished_writecb");
-      bufferevent_free(bev);
+      ev_free_context(ctx);
     }
 }
 
