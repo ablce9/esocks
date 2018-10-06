@@ -1,5 +1,6 @@
-#include <event2/dns.h>
+#include <fcntl.h>
 
+#include <event2/dns.h>
 #include "./evs-internal.h"
 #include "./evs_server.h"
 #include "./evs_lru.h"
@@ -393,11 +394,17 @@ test_close_on_finished_writecb(void)
   struct timeval tv;
   short what = 0x00;
   u8 buffer[1024];
-  int i;
+  int i, fd;
 
   what |= BEV_EVENT_EOF;
   for (i = 0; i < (int)sizeof(buffer); i++)
     buffer[i] = i;
+
+  fd = open("/dev/null", O_RDWR);
+  if (fd == -1)
+    test_failed("open()");
+
+  pair[1] = fd;
 
   base = event_base_new();
   bev = bufferevent_socket_new(base, pair[0], 0);
