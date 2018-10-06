@@ -12,6 +12,7 @@
 #include "crypto.h"
 #include "evs_log.h"
 #include "evs_server.h"
+#include "evs_version.h"
 
 struct settings settings;
 
@@ -64,20 +65,22 @@ static
 void usage() {
   printf("Usage: esocks [OPTIONS...]\n"
 	 "\n"
-	 "options:\n"
+	 "OPTIONS:\n"
 	 "  -s  bind to this address, default 0.0.0.0\n"
 	 "  -p  bind to this port, default 1080\n"
 	 "  -u  server address\n"
 	 "  -j  server port\n"
 	 "  -k  password\n"
 	 "  -c  cipher name, defualt aes-256-cfb\n"
-	 // "  -n  workers\n"
 	 "  -t  timeout for connections, default 300 seconds\n"
-	 //"  -g  nameserver\n"
+	 "  -g  nameserver\n"
 	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
+	 "  -d  dns cache timeout, default 6500\n"
+	 "  -v  show version number\n"
+	 // "  -n  workers\n"
 	 //"  -r  limit reading rate in bytes, default none\n"
 	 //"  -w  limit writing rate in bytes, default none\n"
-	 "  -d   dns cache timeout, default 6500\n");
+	 );
   exit(1);
 }
 
@@ -94,7 +97,7 @@ main(int argc, char **argv)
   settings_init();
 
   while (cc != -1) {
-    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:d:");
+    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:d:v");
 
     switch(cc) {
     case 's':
@@ -148,6 +151,9 @@ main(int argc, char **argv)
     case 'd':
       settings.dns_cache_tval = atol(optarg);
       break;
+    case 'v':
+      printf("esocks %s\n", ESOCKS_VERSION);
+      exit(0);
     case '?':
       usage();
     }
