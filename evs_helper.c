@@ -13,7 +13,7 @@ static char * ev_copy_(char *dst, char *src, size_t s);
 #ifdef HAVE_GETADDRINFO
 /*
  * resolve_domain is a helper function using getaddrinfo as backend.
- * This blocks your program. :)
+ * Unlike Libevent's evdns_getaddrinfo and getaddrinfo_a this function blocks processes.
  */
 int
 resolve_domain(socks_name_t *n)
@@ -28,7 +28,7 @@ resolve_domain(socks_name_t *n)
 
   (void) ev_copy(domain, n->domain, n->hlen);
 
-  log_d(DEBUG, "resolve: %s", domain);
+  log_d(DEBUG, "resolve: \"%s\"", domain);
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;

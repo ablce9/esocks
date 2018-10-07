@@ -86,7 +86,7 @@ test_lru_payload(void)
 
   lru_insert_left(&node, "zero", &x, sizeof(x));
 
-  assert(strcmp(lru_get_tail(&node)->key, (const char*)"zero") == 0);
+  assert(strcmp(lru_get_tail()->key, (const char*)"zero") == 0);
 
   current = lru_get_node(&node, "does_not_exist", (lru_cmp_func*)strcmp);
   assert(current == NULL);
@@ -114,7 +114,7 @@ test_lru_payload(void)
   assert(current);
 
   assert(strcmp(((payload_t*)current->payload_ptr)->key, (const char*)"key") == 0);
-  assert(lru_get_tail(&node) != NULL);
+  assert(lru_get_tail() != NULL);
 
   lru_purge_all(&node);
   test_ok("%s", __func__);
@@ -134,7 +134,7 @@ test_lru_validate_tail(void)
   lru_insert_left(&node, "foo", &x, sizeof(x));
 
   // tail should be the first, which was inserted right before this one called.
-  assert(strcmp((lru_get_tail(&node))->key, (const char*)"foo") == 0);
+  assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
   assert(strcmp((lru_get_node(&node, "foo", (lru_cmp_func*)strcmp))->key, (const char*)"foo") == 0);
 
   // Let's create a place where ptr->next && ptr->prev are fully loaded.
@@ -145,7 +145,7 @@ test_lru_validate_tail(void)
   // Middle of the node
   assert(strcmp((lru_get_node(&node, "doo", (lru_cmp_func*)strcmp))->key, (const char*)"doo") == 0);
   // Tail of the node
-  assert(strcmp((lru_get_tail(&node))->key, (const char*)"foo") == 0);
+  assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
   // Head of the node
   assert(strcmp(node->key, (const char*)"doo") == 0);
   // Don't forget buz :)
@@ -172,7 +172,7 @@ test_lru_remove_node(void)
   // Pop key=first
   lru_remove_oldest(&node, 1);
 
-  assert(lru_get_tail(&node)->key == (const char*)"doo");
+  assert(lru_get_tail()->key == (const char*)"doo");
 
   lru_purge_all(&node);
   test_ok("%s", __func__);

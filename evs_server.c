@@ -30,7 +30,7 @@
 #include "crypto.h"
 
 struct settings settings;
-static struct event_base *base = NULL;
+static struct event_base *ev_base = NULL;
 static struct evdns_base *dns_base = NULL;
 static struct lru_node_s *node = NULL;
 
@@ -120,18 +120,18 @@ run_srv(void)
   if (listen(fd, BACKLOG) < 0)
     goto err;
 
-  base = event_base_new();
-  signal_event = event_new(base, SIGTERM,
-			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)base);
+  ev_base = event_base_new();
+  signal_event = event_new(ev_base, SIGTERM,
+			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)ev_base);
   event_add(signal_event, NULL);
 
   // SIGPIPE happens when connections are reset by peers
-  sigpipe_event = event_new(base, SIGPIPE,
-			    EV_SIGNAL|EV_PERSIST, pass_through_func, (void*)base);
+  sigpipe_event = event_new(ev_base, SIGPIPE,
+			    EV_SIGNAL|EV_PERSIST, pass_through_func, (void*)ev_base);
   event_add(sigpipe_event, NULL);
 
   // Set Listener callback
-  listen_event = event_new(base, fd,
+  listen_event = event_new(ev_base, fd,
 			   EV_READ|EV_PERSIST, listen_func, NULL);
   event_add(listen_event, NULL);
 
@@ -144,7 +144,7 @@ run_srv(void)
       log_i("start DNS service");
 
       // Start asynchronous dns services.
-      dns_base = evdns_base_new(base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+      dns_base = evdns_base_new(ev_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
 	log_ex(1, "evdns_base_new");
 
@@ -166,19 +166,19 @@ run_srv(void)
       cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
       // Clean dns cache with timeout.
-      handle_dns_cache = event_new(base, -1,
+      handle_dns_cache = event_new(ev_base, -1,
 				   EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
 				   (void*)&cache_config);
 
       event_add(handle_dns_cache, &dns_cache_tval);
     }
 
-  event_base_dispatch(base);
+  event_base_dispatch(ev_base);
 
   event_free(signal_event);
   event_free(sigpipe_event);
   event_free(listen_event);
-  event_base_free(base);
+  event_base_free(ev_base);
   if (!settings.proxy) {
     evdns_base_free(dns_base, 0);
     lru_purge_all(&node);
@@ -214,14 +214,10 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
 	  continue;
 	}
 
-      if (fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
-	{
-	  evutil_closesocket(new_fd);
-	  log_warn("fcntl, F_SETFD");
-	}
-
+      if (evutil_make_socket_closeonexec(fd) < 0)
+	log_warn("evutil_make_socket_closeonexec()");
       if (evutil_make_socket_nonblocking(fd) < 0)
-	log_warn("socket_nonblocking");
+	log_warn("evutil_make_socket_nonblocking()");
 
       accept_func(new_fd, what, ctx);
     }
@@ -298,10 +294,10 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
   struct ev_context_s *context;
   struct timeval tval = {settings.timeout, 0};
 
-  bev = bufferevent_socket_new(base, fd,
+  bev = bufferevent_socket_new(ev_base, fd,
 			       BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-  partner = bufferevent_socket_new(base, -1,
+  partner = bufferevent_socket_new(ev_base, -1,
 				   BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
   context = ev_new_context();
