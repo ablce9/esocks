@@ -43,6 +43,7 @@ settings_init(void)
   settings.proxy = NULL;
   // TODO: dns ttl
   settings.dns_cache_tval = 6500;
+  settings.workers = 0;
 
   // TODO: refactor, this ain't good for security!
   const u8 key16[16] = {
@@ -71,6 +72,7 @@ void usage() {
 	 "  -d  dns cache timeout (default 6500 seconds)\n"
 	 "  -j  connect to this port\n"
 	 "  -k  password for AES enc/dec\n"
+	 "  -n  worker number"
 	 "  -o  path to resolver conf file (default /etc/resolv.conf)\n"
 	 "  -p  bind to this port (default 1080)\n"
 	 "  -s  bind to this address (default 0.0.0.0)\n"
@@ -85,8 +87,7 @@ void usage() {
 int
 main(int argc, char **argv)
 {
-  int cc = 0;
-  int port;
+  int port, cc = 0;
 
   // Init OpenSSL
   // TODO: free all loaded memory
@@ -102,7 +103,7 @@ main(int argc, char **argv)
     // "g:" /* TODO: make it comma-separate; nameservers */
     "j:" /* Connect to this port */
     "k:" /* password for AES enc/dec */
-    // "n:" /* TODO: support worker number */
+    "n:" /* TODO: support worker number */
     "o:" /* Path to resolver conf */
     "p:" /* Bind to this port */
     // "P:" /* TODO: Save PID file */
@@ -133,6 +134,8 @@ main(int argc, char **argv)
     case 'k':
       settings.passphrase = (u8*)optarg;
       break;
+    case 'n':
+      settings.workers = atoi(optarg);
     case 'o':
       settings.resolv_conf = optarg;
       break;
@@ -184,7 +187,10 @@ main(int argc, char **argv)
   log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
 	settings.timeout, settings.cipher_name);
 
-  (void)run_srv();
+  if (settings.workers)
+    ev_do_fork(settings.workers);
+  else
+    (void)run_srv();
 
-  return 0;
+  exit(0);
 }

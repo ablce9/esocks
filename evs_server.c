@@ -4,7 +4,7 @@
  *
  */
 
-#define MAX_OUTPUT 1024 * 512
+#define MAX_OUTPUT (1024*512)
 #define BACKLOG 1024
 
 #include "evs-internal.h"
@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -30,35 +31,35 @@
 #include "crypto.h"
 
 struct settings settings;
-static struct event_base *ev_base = NULL;
-static struct evdns_base *dns_base = NULL;
-static struct lru_node_s *node = NULL;
+static struct event_base* ev_base = NULL;
+static struct evdns_base* dns_base = NULL;
+static struct lru_node_s* node = NULL;
 
-static void signal_func(evutil_socket_t sig_flag, short what, void *ctx);
-static void pass_through_func(evutil_socket_t sig_flag, short what, void *ctx);
+static void signal_func(evutil_socket_t sig_flag, short what, void* ctx);
+static void pass_through_func(evutil_socket_t sig_flag, short what, void* ctx);
 static void listen_func(evutil_socket_t, short, void*);
 static void accept_func(evutil_socket_t, short, void*);
-static void socks_initcb(struct bufferevent *bev, void *ctx);
-static void parse_header_cb(struct bufferevent *bev, void *ctx);
-static void next_readcb(struct bufferevent *bev, void *ctx);
-static void print_address(struct sockaddr *sa, int type, const char *ctx);
-static void event_logger(short what, struct ev_context_s *ctx);
-static void unchoke_writecb(struct bufferevent *bev, void *ctx);
-static void dns_logfn(int is_warn, const char *msg);
-static struct ev_context_s *ev_new_context(void);
-static void ev_free_context(struct ev_context_s *ctx);
-const char * _getprogname(void) { return "esocks"; }
+static void socks_initcb(struct bufferevent* bev, void* ctx);
+static void parse_header_cb(struct bufferevent* bev, void* ctx);
+static void next_readcb(struct bufferevent* bev, void* ctx);
+static void print_address(struct sockaddr* sa, int type, const char* ctx);
+static void event_logger(short what, struct ev_context_s* ctx);
+static void unchoke_writecb(struct bufferevent* bev, void* ctx);
+static void dns_logfn(int is_warn, const char* msg);
+static struct ev_context_s* ev_new_context(void);
+static void ev_free_context(struct ev_context_s* ctx);
+const char* _getprogname(void) { return "esocks"; }
 
 void
 run_srv(void)
 {
-  struct event *signal_event, *sigpipe_event, *listen_event;
+  struct event* signal_event, * sigpipe_event, * listen_event;
   struct dns_cache_config cache_config;
   struct sockaddr_in sin, proxy_sin;
   struct timeval dns_cache_tval = {settings.dns_cache_tval, 0};
 
   int fd;
-  void *proxy = NULL;
+  void* proxy = NULL;
   int socktype = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 
   memset(&sin, 0, sizeof(sin));
@@ -121,7 +122,7 @@ run_srv(void)
     goto err;
 
   ev_base = event_base_new();
-  signal_event = event_new(ev_base, SIGTERM,
+  signal_event = event_new(ev_base, SIGTERM|SIGKILL,
 			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)ev_base);
   event_add(signal_event, NULL);
 
@@ -174,7 +175,6 @@ run_srv(void)
     }
 
   event_base_dispatch(ev_base);
-
   event_free(signal_event);
   event_free(sigpipe_event);
   event_free(listen_event);
@@ -184,7 +184,7 @@ run_srv(void)
     lru_purge_all(&node);
   }
   crypto_shutdown();
-  exit(0);
+  return;
 
  err:
   evutil_closesocket(fd);
@@ -248,13 +248,13 @@ ev_new_context(void)
       ctx->event_handler = NULL;
       ctx->evp_cipher_ctx = EVP_CIPHER_CTX_new();
       ctx->evp_decipher_ctx = EVP_CIPHER_CTX_new();
+
+      if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 1))
+	return NULL;
+
+      if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 0))
+	return NULL;
     }
-
-  if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 1))
-    return NULL;
-
-  if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 0))
-    return NULL;
 
   return ctx;
 }
@@ -273,6 +273,7 @@ ev_free_context(struct ev_context_s *ctx)
       ctx->st = 0;
       ctx->partner = NULL;
       ctx->bev = NULL;
+
       if (ctx->evp_cipher_ctx && ctx->evp_decipher_ctx)
 	{
 	  EVP_CIPHER_CTX_cleanup(ctx->evp_cipher_ctx);
@@ -416,6 +417,7 @@ socks_initcb(struct bufferevent *bev, void *ctx)
     }
   else
     {
+      log_i("socks_initcb(): wrong version");
       context->st = ev_destroy;
       ev_free_context(context);
     }
@@ -690,7 +692,6 @@ resolve(struct ev_context_s *context)
 
   if (!context->bev)
     return;
-
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = PF_INET; // Let's prefer IPV4 for now
   hints.ai_protocol = IPPROTO_UDP;
@@ -856,8 +857,9 @@ static void
 signal_func(evutil_socket_t sig_flag, short what, void *ctx)
 {
   struct event_base *base = ctx;
-  struct timeval delay = {1, 0};
-  int sec = 1;
+#define SIGNAL_DELAY 2
+  struct timeval delay = {SIGNAL_DELAY, 0};
+  int sec = SIGNAL_DELAY;
 
   log_i("Caught an interupt signal; exiting cleanly in %d second(s)", sec);
   event_base_loopexit(base, &delay);
@@ -950,4 +952,38 @@ int
 ev_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
 {
   return openssl_decrypt(ctx, out, in, ilen);
+}
+
+void
+ev_do_fork(int workers)
+{
+ int j;
+ pid_t pid, pids[workers];
+
+ log_i("fork(): parent pid=%ld", (long)getpid());
+ for (j = 0; j < workers; j++) {
+   if ((pid = fork()) == 0) {
+     // child process
+     log_i("fork(): child pid=%ld", (long)getpid());
+     run_srv();
+     exit(0);
+   }
+   else
+     pids[j] = pid;
+ }
+
+ run_srv();
+ log_i("event_loopexit(): parent's loop just exited.");
+
+  for (j = 0; j < workers; j++) {
+    int status;
+    kill(pids[j], SIGTERM);
+    if ((waitpid(pids[j], &status, 0)) == -1)
+      log_e("waitpid()");
+
+    if (WIFEXITED(status))
+      log_i("WIFEXITED(): child excited");
+    if (WIFSIGNALED(status))
+      log_i("WIFSIGNALED(): child killed by signal");
+  }
 }

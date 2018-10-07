@@ -1,5 +1,5 @@
-#ifndef OPENSSL_ENCRYTOR_H
-#define OPENSSL_ENCRYTOR_H
+#ifndef OPENSSL_CRYPTO_H
+#define OPENSSL_CRYPTO_H
 
 #include "evs-internal.h"
 

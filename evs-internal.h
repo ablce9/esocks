@@ -64,7 +64,7 @@ struct settings {
   short                srv_port;
   const char           *server_addr;
   short                server_port;
-  const char           *worker;
+  int                  workers;
   _Bool                relay_mode;
   const char           *nameserver;
   const char           *resolv_conf;
