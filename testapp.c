@@ -78,7 +78,7 @@ test_lru_payload(void)
 {
   lru_node_t *node, *current;
   struct payload_s x, y, z;
-  node = init_lru();
+  node = lru_init();
   assert(node != NULL);
 
   x.key = "key";
@@ -125,7 +125,7 @@ test_lru_validate_tail(void)
 {
   lru_node_t *node;
   struct payload_s x;
-  node = init_lru();
+  node = lru_init();
   assert(node);
 
   x.key = "xkey";
@@ -160,7 +160,7 @@ test_lru_remove_node(void)
 {
   lru_node_t *node;
   struct payload_s x;
-  node = init_lru();
+  node = lru_init();
   assert(node);
 
   x.key = "xkey";
@@ -193,12 +193,16 @@ test_lru_timeout_handler(void)
   int err, i;
   char *hostname = "client-event-reporter.twitch.tv";
   char *port = "443";
+  short what = 0;
+
+  what |= EV_TIMEOUT;
+
   base = event_base_new();
-  node = init_lru();
+  node = lru_init();
 
   memset(&config, 0, sizeof(config));
   config.cache = node;
-  config.timeout = 1;
+  config.timeout = 0;
 
   assert(node && base);
 
@@ -260,6 +264,8 @@ test_lru_timeout_handler(void)
   lru_insert_left(&config.cache, hostname, sock_addr, sizeof(sock_addr));
   usleep(1100000);
 
+  clean_dns_cache_func(0, what, (void*)&config);
+
   event_base_dispatch(base);
 
   // Try to free allocated mems
@@ -318,7 +324,6 @@ test_resolve_cb(void)
 
   bufferevent_free(ctx->partner);
 
-  // -1 because IPv6 is not malloced.
   for (i = 0; i < ctx->socks_addr->naddrs-1; i++)
     free(ctx->socks_addr->addrs[i].sockaddr);
 

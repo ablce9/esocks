@@ -107,12 +107,8 @@ run_srv(void)
     log_ex(1, "setsockopt, level=TCP, opt=TCP_NODELAY");
 #endif
 
-  int flags;
-  if ((flags = fcntl(fd, F_GETFL, NULL)) < 0)
+  if (evutil_make_socket_nonblocking(fd) < 0)
     goto err;
-  if (!(flags & O_NONBLOCK))
-    goto err;
-
   if (evutil_make_listen_socket_reuseable(fd) < 0)
     goto err;
   if (evutil_make_listen_socket_reuseable_port(fd) < 0)
@@ -163,7 +159,7 @@ run_srv(void)
 				       DNS_OPTION_NAMESERVERS, settings.resolv_conf) < 0)
 	log_ex(1, "evdns_base_resolv_conf_parse");
 
-      node = init_lru();
+      node = lru_init();
       ASSERT(node != NULL);
 
       cache_config.cache = node;
@@ -183,14 +179,11 @@ run_srv(void)
   event_free(sigpipe_event);
   event_free(listen_event);
   event_base_free(base);
-
   if (!settings.proxy) {
     evdns_base_free(dns_base, 0);
     lru_purge_all(&node);
   }
-
   crypto_shutdown();
-
   exit(0);
 
  err:
@@ -221,10 +214,11 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
 	  continue;
 	}
 
-      if (fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1) {
-	evutil_closesocket(new_fd);
-	log_warn("fcntl, F_SETFD");
-      }
+      if (fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
+	{
+	  evutil_closesocket(new_fd);
+	  log_warn("fcntl, F_SETFD");
+	}
 
       if (evutil_make_socket_nonblocking(fd) < 0)
 	log_warn("socket_nonblocking");
@@ -446,10 +440,10 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   struct ev_context_s *context = ctx;
   struct bufferevent *partner = context->partner;
   size_t buf_size = evbuffer_get_length(src), dlen, buflen;
-  int res, try;
+  int res, try, buf_len;
   u8 buf[buf_size], portbuf[2], buf4[4],
     domain[256], socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0},
-    dec_buf[SOCKS_MAX_BUFFER_SIZE];
+    dec_buf[SOCKS_MAX_BUFFER_SIZE], enc_buf[SOCKS_MAX_BUFFER_SIZE];
   u16 port;
   char tmpl4[SOCKS_INET_ADDRSTRLEN];
   lru_node_t *cached;
@@ -477,11 +471,12 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	break;
       default:
 	log_warn("unkonw command: %d", dec_buf[1]);
-	context->st = ev_destroy;
 	// enc
 	socks_reply[1] = GENERAL_FAILURE;
-	bufferevent_write(bev, socks_reply, 10);
+	buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
+	bufferevent_write(bev, enc_buf, buf_len);
 	bufferevent_disable(bev, EV_WRITE);
+	context->st = ev_destroy;
       }
     }
 
@@ -519,8 +514,9 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	{
 	  log_e("connect: failed to connect");
 	  socks_reply[1] = CONNECTION_REFUSED;
+	  buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
+	  bufferevent_write(bev, enc_buf, buf_len);
 	  context->st = ev_destroy;
-	  bufferevent_write(bev, socks_reply, 10);
 	}
       else
 	context->st = ev_connected;
@@ -565,16 +561,11 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	    ssin.sin_port = context->port;
 
 	    if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&ssin,
-					   sizeof(struct sockaddr_in)) != 0)
-	      ; // Pass and try next address
-
-	    else {
+					   sizeof(struct sockaddr_in)) == 0) {
 	      context->st = ev_connected;
 	      break;
 	    }
-	    context->st = ev_destroy;
 	  }
-
 	}
       else
 	resolve(context);
@@ -727,7 +718,8 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
   if (errcode != 0 || ai == NULL)
     {
       log_e("%s:%s", context->domain, evutil_gai_strerror(errcode));
-      goto failed;
+      context->st = ev_destroy;
+      return;
     }
 
   if (context->st == ev_dns_wip)
@@ -778,7 +770,6 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       log_i("connect to %s", context->domain);
 
-      context->st = ev_dns_ok;
       context->socks_addr = socks_addr;
 
       // Start to connect to a server.
@@ -792,11 +783,11 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	sin.sin_port = context->port;
 
 	if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&sin,
-				       sizeof(struct sockaddr_in)) != 0)
-	  ; // Pass til have a conn
-
-	else
+				       sizeof(struct sockaddr_in)) == 0) {
+	  log_i("resolve(): changing status to ev_dns_ok");
+	  context->st = ev_dns_ok;
 	  break;
+	}
       }
 
       if (node != NULL)
@@ -818,6 +809,11 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
 	}
 
+    }
+  else
+    {
+      context->st = ev_destroy;
+      log_i("resolve(): can\'nt establish connection to %s", context->domain);
     }
 
   if (ai)
@@ -880,13 +876,12 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
 
   if (what & EV_TIMEOUT)
     {
-      log_d(DEBUG, "timeout: clean_dns_cache_func %ld sec elapsed", config->timeout);
+      log_d(DEBUG, "clean_dns_cache_func(): %ld sec elapsed",
+	    config->timeout);
 
-      while (1)
+      while ((addrinfo = (socks_addr_t*)lru_get_oldest_payload(&config->cache,
+							      config->timeout)))
 	{
-	  addrinfo = (socks_addr_t*)lru_get_oldest_payload(&config->cache,
-							   config->timeout);
-
 	  if (addrinfo)
 	    {
 	      for (i = 0; i < addrinfo->naddrs; i++) {
@@ -897,11 +892,8 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
 	      free(addrinfo->addrs);
 	      free(addrinfo);
 	      addrinfo = NULL;
-	      log_d(DEBUG, "sweeping dns cache");
+	      log_d(DEBUG, "clean_dns_cache_func(): sweeping dns cache");
 	    }
-	  else
-	    break;
-
 	}
     }
 }

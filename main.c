@@ -63,23 +63,21 @@ settings_init(void)
 
 static
 void usage() {
-  printf("Usage: esocks [OPTIONS...]\n"
+  printf("Esocks " ESOCKS_VERSION ", a socks5 proxy server\n"
+	 "Usage: esocks [OPTIONS...]\n"
 	 "\n"
 	 "OPTIONS:\n"
-	 "  -s  bind to this address, default 0.0.0.0\n"
-	 "  -p  bind to this port, default 1080\n"
-	 "  -u  server address\n"
-	 "  -j  server port\n"
-	 "  -k  password\n"
-	 "  -c  cipher name, defualt aes-256-cfb\n"
-	 "  -t  timeout for connections, default 300 seconds\n"
+	 "  -c  cipher name (default aes-256-cfb)\n"
+	 "  -d  dns cache timeout (default 6500 seconds)\n"
+	 "  -j  connect to this port\n"
+	 "  -k  password for AES enc/dec\n"
+	 "  -o  path to resolver conf file (default /etc/resolv.conf)\n"
+	 "  -p  bind to this port (default 1080)\n"
+	 "  -s  bind to this address (default 0.0.0.0)\n"
+	 "  -u  connect to this server address\n"
+	 "  -t  timeout for connections (default 300 seconds)\n"
 	 "  -g  nameserver\n"
-	 "  -o  path to resolver conf file, defualt /etc/resolv.conf\n"
-	 "  -d  dns cache timeout, default 6500\n"
-	 "  -v  show version number\n"
-	 // "  -n  workers\n"
-	 //"  -r  limit reading rate in bytes, default none\n"
-	 //"  -w  limit writing rate in bytes, default none\n"
+	 "  -V  show version number\n"
 	 );
   exit(1);
 }
@@ -96,22 +94,35 @@ main(int argc, char **argv)
 
   settings_init();
 
+  char *shortopts =
+    // "C:" /* TODO: support config file */
+    "c:" /* cipher name */
+    "d:" /* dns cache timeout */
+    // "D"  /* TODO: support daemon mode */
+    // "g:" /* TODO: make it comma-separate; nameservers */
+    "j:" /* Connect to this port */
+    "k:" /* password for AES enc/dec */
+    // "n:" /* TODO: support worker number */
+    "o:" /* Path to resolver conf */
+    "p:" /* Bind to this port */
+    // "P:" /* TODO: Save PID file */
+    // "r:" /* TODO: read rate limit */
+    "s:" /* Bind to this address */
+    "t:" /* Timeout for connections */
+    "u:" /* Connect to this address */
+    // "v"  /* TODO: verbose */
+    "Vh"  /* Show version number */
+    // "w:" /* TODO: write rate limit */
+    ;
   while (cc != -1) {
-    cc = getopt(argc, argv, "lhs:p:u:j:k:w:r:g:t:n:o:r:e:c:d:v");
+    cc = getopt(argc, argv, shortopts);
 
     switch(cc) {
-    case 's':
-      settings.srv_addr = optarg;
+    case 'c':
+      settings.cipher_name = optarg;
       break;
-    case 'p':
-      port = atoi(optarg);
-      if (port < 1 || port > 65535)
-	usage();
-      settings.srv_port = port;
-      break;
-    case 'u':
-      settings.server_addr = optarg;
-      settings.relay_mode = true;
+    case 'd':
+      settings.dns_cache_tval = atol(optarg);
       break;
     case 'j':
       port = atoi(optarg);
@@ -119,41 +130,34 @@ main(int argc, char **argv)
 	usage();
       settings.server_port = port;
       settings.relay_mode = true;
-      break;
     case 'k':
       settings.passphrase = (u8*)optarg;
-      break;
-    case 'n':
-      settings.worker = optarg;
-      break;
-    case 'g':
-      settings.nameserver = optarg;
-      break;
-    case 't':
-      settings.timeout = atol(optarg);
       break;
     case 'o':
       settings.resolv_conf = optarg;
       break;
+    case 'p':
+      port = atoi(optarg);
+      if (port < 1 || port > 65535)
+	usage();
+      settings.srv_port = port;
+      break;
+    case 's':
+      settings.srv_addr = optarg;
+      break;
+    case 't':
+      settings.timeout = atol(optarg);
+      break;
+    case 'u':
+      settings.server_addr = optarg;
+      settings.relay_mode = true;
+      break;
+    case 'V':
+      printf("esocks %s\n", ESOCKS_VERSION);
+      exit(0);
     case 'h':
       usage();
       break;
-      // TODO rate limit
-    case 'r':
-      settings.rate_rlimit = atoi(optarg);
-      break;
-    case 'e':
-      settings.rate_wlimit = atoi(optarg);
-      break;
-    case 'c':
-      settings.cipher_name = optarg;
-      break;
-    case 'd':
-      settings.dns_cache_tval = atol(optarg);
-      break;
-    case 'v':
-      printf("esocks %s\n", ESOCKS_VERSION);
-      exit(0);
     case '?':
       usage();
     }
@@ -172,10 +176,10 @@ main(int argc, char **argv)
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 
   if (settings.relay_mode)
-    log_i("%s:%d and connect to %s:%d",
+    log_i("listening on %s:%d and connect to %s:%d",
 	  settings.srv_addr, settings.srv_port, settings.server_addr, settings.server_port);
   else
-      log_i("%s:%d", settings.srv_addr, settings.srv_port);
+      log_i("listening on %s:%d", settings.srv_addr, settings.srv_port);
 
   log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
 	settings.timeout, settings.cipher_name);

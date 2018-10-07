@@ -28,7 +28,7 @@ lru_get_key(lru_node_t *p)
 };
 
 lru_node_t *
-init_lru(void)
+lru_init(void)
 {
   time_t now = time(&now);
   lru_node_t *node_ptr;
