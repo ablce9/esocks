@@ -72,7 +72,7 @@ void usage() {
 	 "  -d  dns cache timeout (default 6500 seconds)\n"
 	 "  -j  connect to this port\n"
 	 "  -k  password for AES enc/dec\n"
-	 "  -n  worker number"
+	 "  -n  worker number\n"
 	 "  -o  path to resolver conf file (default /etc/resolv.conf)\n"
 	 "  -p  bind to this port (default 1080)\n"
 	 "  -s  bind to this address (default 0.0.0.0)\n"
@@ -85,17 +85,15 @@ void usage() {
 }
 
 int
-main(int argc, char **argv)
+main(int argc, char** argv)
 {
-  int port, cc = 0;
-
-  // Init OpenSSL
-  // TODO: free all loaded memory
+  int port;
+  int cc = 0;
   crypto_init();
 
   settings_init();
 
-  char *shortopts =
+  char* shortopts =
     // "C:" /* TODO: support config file */
     "c:" /* cipher name */
     "d:" /* dns cache timeout */
@@ -171,10 +169,11 @@ main(int argc, char **argv)
   settings.dgst = EVP_md5();
 
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
-		 settings.passphrase, settings.plen, 1, (u8*)settings.key, (u8*)settings.iv);
+		 settings.passphrase, settings.plen, 1, (u8*)settings.key,
+		 (u8*)settings.iv);
 
   if (settings.cipher == NULL)
-    log_ex(1, "Setting cipher %s", settings.cipher_name);
+    log_ex(1, "setting cipher %s", settings.cipher_name);
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 

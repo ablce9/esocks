@@ -11,12 +11,12 @@
 #include "evs_lru.h"
 
 struct socks_addr {
-  struct sockaddr *sockaddr;
-  socklen_t       socklen;
+  struct sockaddr* sockaddr;
+  socklen_t        socklen;
 };
 
 typedef struct {
-  struct socks_addr  *addrs;
+  struct socks_addr* addrs;
   int                naddrs;
 } socks_addr_t;
 
@@ -25,15 +25,14 @@ typedef struct socks_name_s {
   u16                port;
   int                family;
   char               domain[256];
-  socks_addr_t       *addrs;
-  struct sockaddr    *sa;
+  socks_addr_t*      addrs;
+  struct sockaddr*   sa;
 } socks_name_t;
 
 #ifdef HAVE_GETADDRINFO
-int resolve_host(socks_name_t *);
+int resolve_host(socks_name_t*);
 #endif
 
-char * ev_copy(char *dst, char *src, size_t s);
-void *ev_xmalloc(size_t);
+char* ev_copy(char* dst, char* src, size_t s);
 
 #endif

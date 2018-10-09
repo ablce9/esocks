@@ -5,23 +5,24 @@
 #include "evs_log.h"
 
 struct settings settings;
-static void  streamcb(struct bufferevent *bev, void *ctx);
+static void  streamcb(struct bufferevent* bev, void* ctx);
 
 void
-evs_setcb_for_local(struct bufferevent *bev, void *context)
+evs_setcb_for_local(struct bufferevent* bev, void* context)
 {
   bufferevent_setcb(bev, fast_streamcb, NULL, eventcb, context);
 }
 
 
 void
-fast_streamcb(struct bufferevent *bev, void *ctx)
+fast_streamcb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->partner;
+  struct ev_context_s* context = ctx;
+  struct bufferevent* partner = context->partner;
   struct evbuffer *src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size];
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   if (!partner || !buf_size)
@@ -54,14 +55,15 @@ fast_streamcb(struct bufferevent *bev, void *ctx)
 }
 
 static void
-streamcb(struct bufferevent *bev, void *ctx)
+streamcb(struct bufferevent* bev, void* ctx)
 {
   struct ev_context_s *context = ctx;
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev);
-  size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
+  size_t buf_size = evbuffer_get_length(src);
+  u8 buf[buf_size];
+  u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
 
   if (!partner || !buf_size)
     {

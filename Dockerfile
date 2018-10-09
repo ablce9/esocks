@@ -17,11 +17,11 @@ RUN set -x \
     && ./configure && make && make install \
     && cd .. && rm -rf libevent-$LIBEVENT_VERSION-stable.tar.gz libevent-$LIBEVENT_VERSION-stable
 
-WORKDIR /app
+WORKDIR /opt/esocks
 
-ADD . /app
+ADD . /opt/esocks
 
-COPY . /app
+COPY . /opt/esocks
 
 RUN ./autogen.sh && ./configure --with-libevent=/usr/local && make install
 

@@ -7,7 +7,7 @@
 #include "evs_helper.h"
 #include "evs_log.h"
 
-static char * ev_copy_(char *dst, char *src, size_t s);
+static char* ev_copy_(char* dst, char* src, size_t s);
 
 
 #ifdef HAVE_GETADDRINFO
@@ -16,12 +16,14 @@ static char * ev_copy_(char *dst, char *src, size_t s);
  * Unlike Libevent's evdns_getaddrinfo and getaddrinfo_a this function blocks processes.
  */
 int
-resolve_domain(socks_name_t *n)
+resolve_domain(socks_name_t* n)
 {
-  struct addrinfo hints, *res, *p;
-  struct sockaddr_in *sin;
-  char *domain;
+  struct addrinfo hints;
+  struct addrinfo* res;
+  struct addrinfo* p;
+  struct sockaddr_in* sin;
   int i;
+  char* domain;
 
   domain = malloc(n->hlen + 1);
   assert(!domain);
@@ -94,16 +96,13 @@ resolve_domain(socks_name_t *n)
 
 #endif
 
-/*
- * ev_copy does copy src buffer to dst buffer that is null-terminated.
- */
-char * ev_copy(char *dst, char *src, size_t s)
+char* ev_copy(char* dst, char* src, size_t s)
 {
   return ev_copy_(dst, src, s);
 }
 
-static char *
-ev_copy_(char *dst, char *src, size_t s)
+static char*
+ev_copy_(char* dst, char* src, size_t s)
 {
 
   while(s--)

@@ -53,13 +53,16 @@ const char* _getprogname(void) { return "esocks"; }
 void
 run_srv(void)
 {
-  struct event* signal_event, * sigpipe_event, * listen_event;
+  struct event* signal_event;
+  struct event* sigpipe_event;
+  struct event* listen_event;
+  struct event* handle_dns_cache;
   struct dns_cache_config cache_config;
-  struct sockaddr_in sin, proxy_sin;
+  struct sockaddr_in sin;
+  struct sockaddr_in proxy_sin;
   struct timeval dns_cache_tval = {settings.dns_cache_tval, 0};
-
-  int fd;
   void* proxy = NULL;
+  int fd;
   int socktype = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 
   memset(&sin, 0, sizeof(sin));
@@ -70,7 +73,7 @@ run_srv(void)
       sin.sin_port = htons(settings.srv_port);
       if (!(evutil_inet_pton(AF_INET, settings.srv_addr,
 			     (struct sockaddr*)&sin.sin_addr)))
-	log_ex(1, "evutil_inet_pton");
+	log_ex(1, "run_srv(): evutil_inet_pton()");
 
       memset(&proxy_sin, 0, sizeof(proxy_sin));
       proxy_sin.sin_family = AF_INET;
@@ -78,19 +81,18 @@ run_srv(void)
 
       if (!(evutil_inet_pton(AF_INET, settings.server_addr,
 			     (struct sockaddr*)&proxy_sin.sin_addr)))
-	log_ex(1, "evutil_inet_pton");
+	log_ex(1, "run_srv(): evutil_inet_pton()");
 
       proxy = &proxy_sin;
+      settings.proxy = proxy;
     }
   else
     {
       sin.sin_port = htons(settings.srv_port);
       if (!(evutil_inet_pton(AF_INET, settings.srv_addr,
 			     (struct sockaddr*)&sin.sin_addr)))
-	log_ex(1, "evutil_inet_pton");
+	log_ex(1, "run_srv(): evutil_inet_pton()");
     }
-
-  settings.proxy = proxy;
 
   fd = socket(AF_INET, socktype, 0);
   if (fd == -1)
@@ -99,13 +101,13 @@ run_srv(void)
 #if defined(HAVE_TCP_FASTOPEN) && defined(HAVE_TCP_NODELAY)
   int optval = 5;
 
-  log_i("set tcp_fastopen and tcp_nodelay");
+  log_i("run_srv(): set tcp_fastopen and tcp_nodelay");
 
   if (setsockopt(fd, SOL_TCP, TCP_FASTOPEN, (void*)&optval, sizeof(optval)) < 0)
-    log_ex(1, "setsockopt, level=TCP, opt=TCP_FASTOPEN");
+    log_ex(1, "run_srv(): setsockopt, level=TCP, opt=TCP_FASTOPEN");
 
   if (setsockopt(fd, SOL_TCP, TCP_NODELAY, (void*)&optval, sizeof(optval)) < 0)
-    log_ex(1, "setsockopt, level=TCP, opt=TCP_NODELAY");
+    log_ex(1, "run_srv(): setsockopt, level=TCP, opt=TCP_NODELAY");
 #endif
 
   if (evutil_make_socket_nonblocking(fd) < 0)
@@ -138,27 +140,25 @@ run_srv(void)
 
   if (!settings.proxy)
     {
-      struct event *handle_dns_cache;
-
       memset(&cache_config, 0, sizeof(struct dns_cache_config));
 
-      log_i("start DNS service");
+      log_i("run_srv(): start DNS service");
 
       // Start asynchronous dns services.
       dns_base = evdns_base_new(ev_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
-	log_ex(1, "evdns_base_new");
+	log_ex(1, "run_srv(): evdns_base_new");
 
       if (DEBUG)
 	evdns_set_log_fn(dns_logfn);
 
       // Configure nameservers.
       if (settings.nameserver)
-	log_ex(1, "failed to add nameserver(s)");
+	log_ex(1, "run_srv(): failed to add nameserver(s)");
 
       if (evdns_base_resolv_conf_parse(dns_base,
 				       DNS_OPTION_NAMESERVERS, settings.resolv_conf) < 0)
-	log_ex(1, "evdns_base_resolv_conf_parse");
+	log_ex(1, "run_srv(): evdns_base_resolv_conf_parse()");
 
       node = lru_init();
       ASSERT(node != NULL);
@@ -188,11 +188,11 @@ run_srv(void)
 
  err:
   evutil_closesocket(fd);
-  log_ex(1, "A fatal error occurred");
+  log_ex(1, "run_srv(): A fatal error occurred");
 }
 
 static void
-listen_func(evutil_socket_t fd, short what, void *ctx)
+listen_func(evutil_socket_t fd, short what, void* ctx)
 {
   int new_fd;
   socklen_t addrlen;
@@ -215,24 +215,24 @@ listen_func(evutil_socket_t fd, short what, void *ctx)
 	}
 
       if (evutil_make_socket_closeonexec(fd) < 0)
-	log_warn("evutil_make_socket_closeonexec()");
+	log_warn("listen_func(): evutil_make_socket_closeonexec()");
       if (evutil_make_socket_nonblocking(fd) < 0)
-	log_warn("evutil_make_socket_nonblocking()");
+	log_warn("listen_func(): evutil_make_socket_nonblocking()");
 
       accept_func(new_fd, what, ctx);
     }
 
   if (fd == EAGAIN || fd == EWOULDBLOCK || fd == ECONNABORTED || fd == EINTR)
     {
-      log_warn("fd error code=%d", fd);
+      log_warn("listen_func(): fd error code=%d", fd);
       evutil_closesocket(new_fd);
     }
 }
 
-static struct ev_context_s *
+static struct ev_context_s*
 ev_new_context(void)
 {
-  struct ev_context_s *ctx;
+  struct ev_context_s* ctx;
 
   ctx = calloc(1, sizeof(struct ev_context_s));
 
@@ -249,10 +249,11 @@ ev_new_context(void)
       ctx->evp_cipher_ctx = EVP_CIPHER_CTX_new();
       ctx->evp_decipher_ctx = EVP_CIPHER_CTX_new();
 
-      if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 1))
+      if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL,
+			     settings.key, settings.iv, 1))
 	return NULL;
-
-      if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL, settings.key, settings.iv, 0))
+      if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL,
+			     settings.key, settings.iv, 0))
 	return NULL;
     }
 
@@ -260,11 +261,12 @@ ev_new_context(void)
 }
 
 static void
-ev_free_context(struct ev_context_s *ctx)
+ev_free_context(struct ev_context_s* ctx)
 {
   if (ctx != NULL && ctx->st == ev_destroy)
     {
-      log_d(DEBUG, "left with status=%d", ctx->st);
+      log_d(DEBUG, "freeing context key=%s", ctx->domain == NULL ? "raw addr" :
+	    ctx->domain);
 
       ctx->reversed ?
 	bufferevent_free(ctx->partner):
@@ -289,10 +291,11 @@ ev_free_context(struct ev_context_s *ctx)
 }
 
 static void
-accept_func(evutil_socket_t fd, short what, void *ctx)
+accept_func(evutil_socket_t fd, short what, void* ctx)
 {
-  struct bufferevent *bev, *partner;
-  struct ev_context_s *context;
+  struct bufferevent* bev;
+  struct bufferevent* partner;
+  struct ev_context_s* context;
   struct timeval tval = {settings.timeout, 0};
 
   bev = bufferevent_socket_new(ev_base, fd,
@@ -316,7 +319,7 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
   if (settings.proxy)
     {
       // Set up proxy
-      struct sockaddr_in *sin = (struct sockaddr_in*)settings.proxy;
+      struct sockaddr_in* sin = (struct sockaddr_in*)settings.proxy;
 
       context->st = ev_init;
       context->event_handler = (bufferevent_data_cb*)fast_streamcb;
@@ -326,8 +329,8 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
       if (bufferevent_socket_connect(context->partner, (struct sockaddr*)sin,
 				     sizeof(struct sockaddr_in)) != 0)
 	{
-	  DEBUG ? log_ex(1, "connect: failed to connect")
-	    : log_e("failed to connect");
+	  DEBUG ? log_ex(1, "accept_func(): connect() failed to connect")
+	    : log_e("accept_func(): failed to connect");
 
 	  context->st = ev_destroy;
 	  bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
@@ -351,10 +354,12 @@ accept_func(evutil_socket_t fd, short what, void *ctx)
 }
 
 void
-eventcb(struct bufferevent *bev, short what, void *ctx)
+eventcb(struct bufferevent* bev, short what, void* ctx)
 {
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->reversed ? context->bev : context->partner;
+  struct ev_context_s* context = ctx;
+  struct bufferevent* partner;
+
+  partner = context->reversed ? context->bev : context->partner;
 
   // Simple analyzer to log events
   event_logger(what, context);
@@ -391,29 +396,30 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 static void
 socks_initcb(struct bufferevent *bev, void *ctx)
 {
-  struct evbuffer *src = bufferevent_get_input(bev);
-  struct ev_context_s *context = ctx;
+  struct evbuffer* src = bufferevent_get_input(bev);
+  struct ev_context_s* context = ctx;
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE], dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size];
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
   // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
-
   ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+
+  log_i("socks_initcb(): getting client and have %ld bytes", buf_size);
+
   if (dec_buf[0] == 5)
     {
       // enc
       u8 p[2] = {5, 0};
-
       outl = ev_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
-
       bufferevent_write(bev, enc_buf, outl);
       context->st = ev_init;
       bufferevent_setcb(bev, parse_header_cb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
-
     }
   else
     {
@@ -425,29 +431,35 @@ socks_initcb(struct bufferevent *bev, void *ctx)
 }
 
 enum {
-  c_connect = 1,
-  c_bind,
-  udpassoc
+  connect_cmd = 1,
+  bind_cmd,
+  udpassoc_cmd,
 } socks_cmd_e;
 
 static void
-parse_header_cb(struct bufferevent *bev, void *ctx)
+parse_header_cb(struct bufferevent* bev, void* ctx)
 {
   struct sockaddr_in sin;
-  struct evbuffer *src = bufferevent_get_input(bev);
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->partner;
-  size_t buf_size = evbuffer_get_length(src), dlen, buflen;
-  int res, try, buf_len;
-  u8 buf[buf_size], portbuf[2], buf4[4],
-    domain[256], socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0},
-    dec_buf[SOCKS_MAX_BUFFER_SIZE], enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  struct evbuffer* src = bufferevent_get_input(bev);
+  struct ev_context_s* context = ctx;
+  struct bufferevent* partner = context->partner;
+  lru_node_t* cached;
+  int res;
+  int try;
+  int buf_len;
   u16 port;
   char tmpl4[SOCKS_INET_ADDRSTRLEN];
-  lru_node_t *cached;
-
-  // Todo: Support IPv6
   static const char fmt4[] = "%d.%d.%d.%d";
+  size_t buf_size = evbuffer_get_length(src);
+  size_t dlen;
+  size_t buflen;
+  u8 buf[buf_size];
+  u8 portbuf[2];
+  u8 buf4[4];
+  u8 domain[256];
+  u8 socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0};
+  u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
 
   // dec
   evbuffer_copyout(src, buf, buf_size);
@@ -455,26 +467,26 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
   ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
-  // Check if version is correct and status is equal to ev_init
   if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
     {
-      /* Parse socks header */
       switch (dec_buf[1]) {
-      case c_connect:
-      case c_bind:
+      case connect_cmd:
+      case bind_cmd:
 	break;
-      case udpassoc:
-	log_warn("udp associate is not supported");
+      case udpassoc_cmd:
+	log_warn("parse_header_cb(): udp associate is not supported");
 	context->st = ev_destroy;
 	break;
       default:
-	log_warn("unkonw command: %d", dec_buf[1]);
+	log_warn("parse_header_cb(): unkonw command: %d", dec_buf[1]);
 	// enc
 	socks_reply[1] = GENERAL_FAILURE;
-	buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
+	buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+			     sizeof(socks_reply), enc_buf);
 	bufferevent_write(bev, enc_buf, buf_len);
 	bufferevent_disable(bev, EV_WRITE);
 	context->st = ev_destroy;
+	break;
       }
     }
 
@@ -487,14 +499,14 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
   switch(dec_buf[3])
     {
     case IPV4:
-      log_i("IPv4: connect immediate");
+      log_i("parse_header_cb(): IPv4, connect immediate");
       memcpy(buf4, dec_buf + 4, sizeof(buf4));
       evutil_snprintf(tmpl4, sizeof(tmpl4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
       memset(&sin, 0, sizeof(sin));
       res = evutil_inet_pton(AF_INET, (char*)tmpl4, &sin.sin_addr);
       if (res <= 0)
 	{
-	  log_e("inet_pton: failed to resolve addr");
+	  log_e("parse_header_cb(): inet_pton() failed to resolve addr");
 	  socks_reply[1] = HOST_UNREACHABLE;
 	  bufferevent_write(bev, socks_reply, 10);
 	  break;
@@ -510,9 +522,10 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       if (bufferevent_socket_connect(partner, (struct sockaddr*)&sin,
 				     sizeof(struct sockaddr_in)) != 0)
 	{
-	  log_e("connect: failed to connect");
+	  log_e("parse_header_cb(): connect() failed to connect");
 	  socks_reply[1] = CONNECTION_REFUSED;
-	  buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
+	  buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+			       sizeof(socks_reply), enc_buf);
 	  bufferevent_write(bev, enc_buf, buf_len);
 	  context->st = ev_destroy;
 	}
@@ -520,15 +533,15 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 	context->st = ev_connected;
       break;
     case IPV6:
-      log_e("IPv6 is not supported yet");
+      log_e("parse_header_cb(): IPv6 is not supported yet");
       socks_reply[1] = ADDRESS_TYPE_NOT_SUPPORTED;
       // enc
       bufferevent_write(bev, socks_reply, 10);
       context->st = ev_destroy;
       break;
     case DOMAINN:
-      dlen = (u8) dec_buf[4];
-      buflen = (int) dlen + 5;
+      dlen = (u8)dec_buf[4];
+      buflen = (int)dlen + 5;
 
       // Get port info first
       memcpy(portbuf, dec_buf + buflen, 2);
@@ -546,7 +559,7 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
       cached = lru_get_node(&node, context->domain, (lru_cmp_func*)strcmp);
       if (cached)
 	{
-	  log_d(DEBUG, "cached: \"%s\"", context->domain);
+	  log_d(DEBUG, "parse_header_cb(): cached: \"%s\"", context->domain);
 
 	  socks_addr_t* addrinfo = (socks_addr_t*)cached->payload_ptr;
 
@@ -560,6 +573,8 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
 	    if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&ssin,
 					   sizeof(struct sockaddr_in)) == 0) {
+	      log_i("parse_header_cb(): got connected to %s index=%d",
+		    context->domain, try);
 	      context->st = ev_connected;
 	      break;
 	    }
@@ -576,9 +591,8 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 
   if (context->st == ev_connected)
     {
-      u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-      int outl = ev_encrypt(context->evp_cipher_ctx, socks_reply, sizeof(socks_reply), enc_buf);
-
+      int outl = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+			    sizeof(socks_reply), enc_buf);
       bufferevent_write(bev, enc_buf, outl);
       bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -588,10 +602,10 @@ parse_header_cb(struct bufferevent *bev, void *ctx)
 }
 
 static void
-unchoke_writecb(struct bufferevent *bev, void *ctx)
+unchoke_writecb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->partner;
+  struct ev_context_s* context = ctx;
+  struct bufferevent* partner = context->partner;
 
   /* We were choking the other side until we drained our outbuf a bit.
    * Now it seems drained. */
@@ -600,17 +614,17 @@ unchoke_writecb(struct bufferevent *bev, void *ctx)
 
   if (partner)
     bufferevent_enable(partner, EV_READ);
-
 }
 
 static void
-next_readcb(struct bufferevent *bev, void *ctx)
+next_readcb(struct bufferevent* bev, void* ctx)
 {
   struct ev_context_s *context = ctx;
   struct bufferevent *partner = context->partner;
   struct evbuffer *src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 buf[buf_size];
+  u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
 
   if (context->st == ev_connected && buf_size)
     {
@@ -622,15 +636,13 @@ next_readcb(struct bufferevent *bev, void *ctx)
 
       if (bufferevent_write(partner, dec_buf, outl) < 0)
 	{
-	  log_e("bufferevent_write");
+	  log_e("next_readcb(): bufferevent_write");
 	  context->st = ev_destroy;
 	}
       else
 	{
 	  context->reversed = true;
 	  context->st = ev_connected;
-
-	  /* set callbacks and wait for server response */
 	  bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
 	  bufferevent_enable(partner, EV_WRITE|EV_READ);
 	}
@@ -638,14 +650,16 @@ next_readcb(struct bufferevent *bev, void *ctx)
 }
 
 void
-handle_streamcb(struct bufferevent *bev, void *ctx)
+handle_streamcb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->bev;
-  struct evbuffer *src = bufferevent_get_input(bev), *dst;
-  size_t buf_size = evbuffer_get_length(src);
-  u8 buf[buf_size], enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  struct ev_context_s* context = ctx;
+  struct bufferevent* partner = context->bev;
+  struct evbuffer* src = bufferevent_get_input(bev);
+  struct evbuffer* dst;
   int outl;
+  size_t buf_size = evbuffer_get_length(src);
+  u8 buf[buf_size];
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
 
   if (!partner || !buf_size)
     {
@@ -658,12 +672,11 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
       // enc
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
-
       outl = ev_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
 
       if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
-	  log_e("failed to write");
+	  log_e("handle_streamcb(): failed to write");
 	  context->st = ev_destroy;
 	}
       else
@@ -676,8 +689,10 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
 
 	  if (evbuffer_get_length(dst) >= MAX_OUTPUT)
 	    {
-	      log_d(DEBUG, "Setting watermark bufsize=%ld", evbuffer_get_length(dst));
-	      bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb, context);
+	      log_d(DEBUG, "handle_streamcb(): setting watermark bufsize=%ld",
+		    evbuffer_get_length(dst));
+	      bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb,
+				context);
 	      bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
 	      bufferevent_disable(bev, EV_READ);
 	    }
@@ -686,12 +701,13 @@ handle_streamcb(struct bufferevent *bev, void *ctx)
 }
 
 void
-resolve(struct ev_context_s *context)
+resolve(struct ev_context_s* context)
 {
   struct evutil_addrinfo hints;
 
   if (!context->bev)
     return;
+
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = PF_INET; // Let's prefer IPV4 for now
   hints.ai_protocol = IPPROTO_UDP;
@@ -702,19 +718,21 @@ resolve(struct ev_context_s *context)
 }
 
 void
-resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
+resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
 {
-  struct sockaddr_in *sin_p;
-  struct ev_context_s *context = ptr;
-  struct evutil_addrinfo *ai_p;
-  socks_addr_t *socks_addr;
-  int i, try;
+  struct sockaddr_in* sin_p;
+  struct ev_context_s* context = ptr;
+  struct evutil_addrinfo* ai_p;
+  socks_addr_t* socks_addr;
+  int i;
+  int try;
   // Send out 10 bytes to reply OK!
-  u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0}, enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 resp[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
 
   if (errcode != 0 || ai == NULL)
     {
-      log_e("%s:%s", context->domain, evutil_gai_strerror(errcode));
+      log_e("resolve(): %s:%s", context->domain, evutil_gai_strerror(errcode));
       context->st = ev_destroy;
       return;
     }
@@ -738,11 +756,11 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
       socks_addr = calloc(1, sizeof(socks_addr_t));
       if (!socks_addr)
-	log_ex(1, "calloc");
+	log_warn("resolve(): calloc");
 
-      socks_addr->addrs = malloc(i * sizeof(socks_addr_t));
+      socks_addr->addrs = malloc(i * sizeof(struct socks_addr));
       if (!socks_addr->addrs)
-	log_ex(1, "malloc");
+	log_warn("resolve(): malloc");
 
       socks_addr->naddrs = i;
 
@@ -752,7 +770,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
 	sin_p = malloc(sizeof(struct sockaddr_in));
 	if (!sin_p)
-	  log_ex(1, "malloc");
+	  log_warn("resolve(): malloc");
 
 	memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
 
@@ -765,7 +783,7 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	i++;
       }
 
-      log_i("connect to %s", context->domain);
+      log_i("resolve(): connect to %s", context->domain);
 
       context->socks_addr = socks_addr;
 
@@ -790,12 +808,10 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
       if (node != NULL)
 	lru_insert_left(&node, (const char*)context->domain,
 			context->socks_addr, sizeof(context->socks_addr));
-
     }
 
   if (context->st == ev_dns_ok)
     {
-
       context->st = ev_connected;
 
       if (context->bev != NULL)
@@ -805,7 +821,6 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	  bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
 	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
 	}
-
     }
   else
     {
@@ -826,9 +841,9 @@ resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 }
 
 void
-close_on_finished_writecb(struct bufferevent *bev, void *ctx)
+close_on_finished_writecb(struct bufferevent* bev, void* ctx)
 {
-  struct evbuffer *evb = bufferevent_get_output(bev);
+  struct evbuffer* evb = bufferevent_get_output(bev);
 
   if (evbuffer_get_length(evb) == 0)
     {
@@ -838,7 +853,7 @@ close_on_finished_writecb(struct bufferevent *bev, void *ctx)
 }
 
 void
-err_writecb(struct bufferevent *bev, void *ctx)
+err_writecb(struct bufferevent* bev, void* ctx)
 {
   u8 msg[2] = {5, 1};
 
@@ -848,13 +863,13 @@ err_writecb(struct bufferevent *bev, void *ctx)
 }
 
 static void
-pass_through_func(evutil_socket_t sig_flag, short what, void *ctx)
+pass_through_func(evutil_socket_t sig_flag, short what, void* ctx)
 {
   log_warn("connection reset by peer");
 }
 
 static void
-signal_func(evutil_socket_t sig_flag, short what, void *ctx)
+signal_func(evutil_socket_t sig_flag, short what, void* ctx)
 {
   struct event_base *base = ctx;
 #define SIGNAL_DELAY 2
@@ -866,7 +881,7 @@ signal_func(evutil_socket_t sig_flag, short what, void *ctx)
 }
 
 void
-clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
+clean_dns_cache_func(evutil_socket_t sig_flag, short what, void* ctx)
 {
   struct dns_cache_config *config = ctx;
   socks_addr_t *addrinfo;
@@ -897,12 +912,12 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
 }
 
 static void
-dns_logfn(int is_warn, const char *msg) {
+dns_logfn(int is_warn, const char* msg) {
   fprintf(stderr, "%s: %s\n", is_warn ? "WARN" : "INFO", msg);
 }
 
 static void
-print_address(struct sockaddr *sa, int type, const char *ctx)
+print_address(struct sockaddr* sa, int type, const char* ctx)
 {
   u8 out[128];
 
@@ -928,12 +943,12 @@ print_address(struct sockaddr *sa, int type, const char *ctx)
 }
 
 static void
-event_logger(short what, struct ev_context_s *ctx)
+event_logger(short what, struct ev_context_s* ctx)
 {
   log_d(DEBUG, "reversed=%s status=%d domain=%s event=%s %s %s %s %s %s",
 	ctx->reversed ? "true" : "false",
 	ctx->st,
-	ctx->domain,
+	ctx->domain == NULL ? "raw addr" : ctx->domain,
 	(what & BEV_EVENT_READING  ) ? "ev_reading": "",
 	(what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
 	(what & BEV_EVENT_EOF      ) ? "ev_eof": "",
@@ -943,13 +958,13 @@ event_logger(short what, struct ev_context_s *ctx)
 }
 
 int
-ev_encrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
+ev_encrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
 {
   return openssl_encrypt(ctx, out, in, ilen);
 }
 
 int
-ev_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
+ev_decrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
 {
   return openssl_decrypt(ctx, out, in, ilen);
 }
@@ -958,7 +973,8 @@ void
 ev_do_fork(int workers)
 {
  int j;
- pid_t pid, pids[workers];
+ pid_t pid;
+ pid_t pids[workers];
 
  log_i("fork(): parent pid=%ld", (long)getpid());
  for (j = 0; j < workers; j++) {

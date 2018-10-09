@@ -8,18 +8,18 @@
 #include "evs_lru.h"
 #include "evs_log.h"
 
-static lru_node_t *lru_tail = NULL; // The tail of node
-static lru_node_t *get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func);
-static int cmp_func(const char *a, const char *b);
+static lru_node_t* lru_tail = NULL; // The tail of node
+static lru_node_t* get_node(lru_node_t** node_pptr, void* key, lru_cmp_func* func);
+static int cmp_func(const char* a, const char* b);
 
 static int
-cmp_func(const char *a, const char *b)
+cmp_func(const char* a, const char* b)
 {
   return a && b ? strcmp(a, b) : 1;
 }
 
-const char *
-lru_get_key(lru_node_t *p)
+const char*
+lru_get_key(lru_node_t* p)
 {
   if (p != NULL)
     return p->key;
@@ -27,11 +27,11 @@ lru_get_key(lru_node_t *p)
   return NULL;
 };
 
-lru_node_t *
+lru_node_t*
 lru_init(void)
 {
   time_t now = time(&now);
-  lru_node_t *node_ptr;
+  lru_node_t* node_ptr;
 
   node_ptr = calloc(1, sizeof(struct lru_node_s));
 
@@ -45,9 +45,10 @@ lru_init(void)
 }
 
 void
-lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
+lru_insert_left(lru_node_t** node, const char* key, void* data, size_t s)
 {
-  lru_node_t *ptr = *node, *next = ptr->next;
+  lru_node_t *ptr = *node;
+  lru_node_t* next;
   time_t now = time(&now);
 
   ASSERT(ptr);
@@ -69,16 +70,16 @@ lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
   }
 }
 
-lru_node_t *
+lru_node_t*
 lru_get_tail()
 {
   return lru_tail;
 }
 
-lru_node_t *
-lru_get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
+lru_node_t*
+lru_get_node(lru_node_t** node_pptr, void* key, lru_cmp_func* func)
 {
-  lru_node_t *ptr = *node_pptr;
+  lru_node_t* ptr = *node_pptr;
 
   if (ptr != NULL && lru_tail)
     return !(ptr->key) ? NULL :  get_node(node_pptr, key, func);
@@ -86,11 +87,12 @@ lru_get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
   return NULL;
 }
 
-static lru_node_t *
-get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
+static lru_node_t*
+get_node(lru_node_t** node_pptr, void* key, lru_cmp_func* func)
 {
-  lru_node_t *ptr = *node_pptr, *head = *node_pptr,
-    *tail = lru_tail;
+  lru_node_t* ptr = *node_pptr;
+  lru_node_t* head = *node_pptr;
+  lru_node_t* tail = lru_tail;
   time_t now = time(&now);
 
   while (ptr != NULL) {
@@ -142,9 +144,9 @@ get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
 }
 
 void
-lru_purge_all(lru_node_t **node_pptr)
+lru_purge_all(lru_node_t** node_pptr)
 {
-  lru_node_t *ptr = *node_pptr;
+  lru_node_t* ptr = *node_pptr;
 
   if (ptr != NULL) {
     log_d(DEBUG, "lru_purge_all(): remove \"%s\"", !ptr->key ? "myself" : ptr->key);
@@ -160,20 +162,23 @@ lru_purge_all(lru_node_t **node_pptr)
 
 }
 
-void *
-lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
+void*
+lru_get_oldest_payload(lru_node_t** node_pptr, long timeout)
 {
-  lru_node_t *tail = lru_tail, *current = *node_pptr;
+  lru_node_t* tail = lru_tail;
+  lru_node_t* current = *node_pptr;
   void *payload = NULL;
   time_t now = time(&now);
 
   while (tail)
     {
       if (now - tail->start >= timeout && tail->key) {
-	log_i("lru_get_oldest_payload(): timeout event occurred and freeing \"%s\"", tail->key);
+	log_i("lru_get_oldest_payload(): timeout event occurred and freeing \"%s\"",
+	      tail->key);
 
 	if (!cmp_func(tail->key, current->key)) {
-	  log_d(DEBUG, "lru_get_oldest_payload(): pop tail \"%s\"", tail->key == NULL ? "myself" : tail->key);
+	  log_d(DEBUG, "lru_get_oldest_payload(): pop tail \"%s\"",
+		tail->key == NULL ? "myself" : tail->key);
 	  lru_tail = tail->next;
 	  tail->key = NULL;
 	  payload = tail->payload_ptr;
@@ -205,10 +210,11 @@ lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
 }
 
 void
-lru_remove_oldest(lru_node_t **node_pptr, long timeout)
+lru_remove_oldest(lru_node_t** node_pptr, long timeout)
 {
-  lru_node_t *tail = lru_tail, *next = tail->next,
-    *current = *node_pptr;
+  lru_node_t* tail = lru_tail;
+  lru_node_t* next = tail->next;
+  lru_node_t* current = *node_pptr;
   time_t now = time(&now);
 
   for (;;)

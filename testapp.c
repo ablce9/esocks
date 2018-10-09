@@ -42,10 +42,11 @@ test_setting_init(void)
 }
 
 static void
-announce(int ok_or_fail, const char *msg, va_list ap)
+announce(int ok_or_fail, const char* msg, va_list ap)
 {
   char buf[1024];
-  char *status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m" : "\033[00;31mfailed\033[00;00m";
+  char* status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m"
+    : "\033[00;31mfailed\033[00;00m";
 
   evutil_vsnprintf(buf, sizeof(buf), msg, ap);
 
@@ -53,7 +54,7 @@ announce(int ok_or_fail, const char *msg, va_list ap)
 }
 
 static void
-test_ok(const char *fmt, ...)
+test_ok(const char* fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
@@ -63,7 +64,7 @@ test_ok(const char *fmt, ...)
 }
 
 static void
-test_failed(const char *fmt, ...)
+test_failed(const char* fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
@@ -76,8 +77,10 @@ test_failed(const char *fmt, ...)
 static void
 test_lru_payload(void)
 {
-  lru_node_t *node, *current;
+  lru_node_t* node;
+  lru_node_t* current;
   struct payload_s x, y, z;
+
   node = lru_init();
   assert(node != NULL);
 
@@ -123,7 +126,7 @@ test_lru_payload(void)
 void
 test_lru_validate_tail(void)
 {
-  lru_node_t *node;
+  lru_node_t* node;
   struct payload_s x;
   node = lru_init();
   assert(node);
@@ -135,7 +138,8 @@ test_lru_validate_tail(void)
 
   // tail should be the first, which was inserted right before this one called.
   assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
-  assert(strcmp((lru_get_node(&node, "foo", (lru_cmp_func*)strcmp))->key, (const char*)"foo") == 0);
+  assert(strcmp((lru_get_node(&node, "foo", (lru_cmp_func*)strcmp))->key,
+		(const char*)"foo") == 0);
 
   // Let's create a place where ptr->next && ptr->prev are fully loaded.
   // And retrieve a middle of the node.
@@ -143,7 +147,8 @@ test_lru_validate_tail(void)
   lru_insert_left(&node, "buz", &x, sizeof(x));
 
   // Middle of the node
-  assert(strcmp((lru_get_node(&node, "doo", (lru_cmp_func*)strcmp))->key, (const char*)"doo") == 0);
+  assert(strcmp((lru_get_node(&node, "doo", (lru_cmp_func*)strcmp))->key,
+		(const char*)"doo") == 0);
   // Tail of the node
   assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
   // Head of the node
@@ -158,7 +163,7 @@ test_lru_validate_tail(void)
 void
 test_lru_remove_node(void)
 {
-  lru_node_t *node;
+  lru_node_t* node;
   struct payload_s x;
   node = lru_init();
   assert(node);
@@ -181,18 +186,20 @@ test_lru_remove_node(void)
 static void
 test_lru_timeout_handler(void)
 {
-  struct event_base *base = NULL;
-  struct lru_node_s *node = NULL;
-  struct event *handler;
+  struct event_base* base = NULL;
+  struct lru_node_s* node = NULL;
+  struct event* handler;
   struct timeval tval = {1, 0};
-  struct evutil_addrinfo hints, *res, *p;
+  struct evutil_addrinfo hints;
+  struct evutil_addrinfo* res;
+  struct evutil_addrinfo* p;
   struct sockaddr_in *sin;
   struct dns_cache_config config;
-
-  socks_addr_t *sock_addr; // Put addrinfo here
-  int err, i;
-  char *hostname = "client-event-reporter.twitch.tv";
-  char *port = "443";
+  socks_addr_t *sock_addr;
+  int err;
+  int i;
+  char* hostname = "client-event-reporter.twitch.tv";
+  char* port = "443";
   short what = 0;
 
   what |= EV_TIMEOUT;
@@ -231,13 +238,12 @@ test_lru_timeout_handler(void)
       i++;
   }
 
-  if (i == 0)
-    test_failed("evutil_getaddrinfo");
+  assert(i != 0);
 
   sock_addr = calloc(1, sizeof(socks_addr_t));
   assert(sock_addr != NULL);
 
-  sock_addr->addrs = malloc(i * sizeof(socks_addr_t));
+  sock_addr->addrs = malloc(i * sizeof(struct socks_addr));
   assert(sock_addr->addrs != NULL);
 
   for (i = 0, p = res; p != NULL; p = p->ai_next) {
@@ -284,18 +290,18 @@ logfn(int is_warn, const char *msg) {
 static void
 test_resolve_cb(void)
 {
-  struct event_base *base;
-  struct evutil_addrinfo hints, *res;
-  struct ev_context_s *ctx;
-  struct bufferevent *partner;
+  struct event_base* base;
+  struct evutil_addrinfo hints;
+  struct evutil_addrinfo* res;
+  struct ev_context_s* ctx;
+  struct bufferevent* partner;
+  int i;
   int err;
+  char* hostname = "www.google.com";
+  char* port = "80";
 
   base = event_base_new();
   assert(base);
-
-  char *hostname = "www.google.com";
-  char *port = "80";
-  int i;
 
   evdns_set_log_fn(logfn);
 
@@ -338,10 +344,14 @@ test_resolve_cb(void)
 static void
 test_event_cb(void)
 {
-  struct event_base *base;
-  struct bufferevent *bev0, *partner0, *bev1, *partner1;
-  struct ev_context_s ctx0, ctx1;
-  short what = 0x00;
+  struct event_base* base;
+  struct bufferevent* bev0;
+  struct bufferevent* partner0;
+  struct bufferevent* bev1;
+  struct bufferevent* partner1;
+  struct ev_context_s ctx0;
+  struct ev_context_s ctx1;
+  short what = 0;
 
   base = event_base_new();
   assert(base);
@@ -393,13 +403,15 @@ static void
 test_close_on_finished_writecb(void)
 {
   static evutil_socket_t pair[2] = {0, 1};
-  struct event_base *base;
-  struct bufferevent *bev, *partner;
+  struct event_base* base;
+  struct bufferevent* bev;
+  struct bufferevent* partner;
   struct ev_context_s ctx;
   struct timeval tv;
-  short what = 0x00;
+  short what = 0;
   u8 buffer[1024];
-  int i, fd;
+  int i;
+  int fd;
 
   what |= BEV_EVENT_EOF;
   for (i = 0; i < (int)sizeof(buffer); i++)
@@ -444,9 +456,10 @@ test_close_on_finished_writecb(void)
 static
 void test_crypto(void)
 {
-  EVP_CIPHER_CTX *c1, *c2;
-  u8 out[SOCKS_MAX_BUFFER_SIZE],
-    in[32] = {
+  EVP_CIPHER_CTX* c1;
+  EVP_CIPHER_CTX* c2;
+  u8 out[SOCKS_MAX_BUFFER_SIZE];
+  u8 in[32] = {
     0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xf,
     0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xf,
     };
@@ -471,15 +484,17 @@ void test_crypto(void)
 static
 void test_wrapped_crypto(void)
 {
-  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-  int outl, index;
   static const int buf_size = 100;
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  int outl;
+  int index;
   int i;
 
   for (i = 0; i < 1000; i++) {
     // Create random bytes.
     u8 in[buf_size];
-    EVP_CIPHER_CTX *c1, *c2;
+    EVP_CIPHER_CTX* c1;
+    EVP_CIPHER_CTX* c2;
     for (index = 0; index < buf_size; index++)
       in[index] = rand();
 
@@ -503,10 +518,14 @@ void test_wrapped_crypto(void)
 static void
 test_stream_encryption(void)
 {
-  EVP_CIPHER_CTX *c1, *c2;
-  static const int buf_size = 2049; // Tempted to set to 2048 but it's really important not to do
-  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE], dec_buf[SOCKS_MAX_BUFFER_SIZE], in[buf_size], buf[buf_size];
+  EVP_CIPHER_CTX* c1;
+  EVP_CIPHER_CTX* c2;
   int i;
+  static const int buf_size = 2049;
+  u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 in[buf_size];
+  u8 buf[buf_size];
 
   c1 = EVP_CIPHER_CTX_new();
   c2 = EVP_CIPHER_CTX_new();
@@ -519,10 +538,10 @@ test_stream_encryption(void)
 
   i = 0;
   do {
-    int enc_total = 0, dec_total = 0;
+    int dec_total = 0;
     i += 517;
     memcpy(in, buf, i);
-    enc_total += ev_encrypt(c1, in, i, enc_buf);
+    ev_encrypt(c1, in, i, enc_buf);
     dec_total += ev_decrypt(c2, enc_buf, i, dec_buf);
     assert(memcmp(in, dec_buf, dec_total) == 0);
   } while(i < buf_size);
@@ -535,7 +554,7 @@ test_stream_encryption(void)
 typedef void(*test_function)(void);
 
 struct testcase {
-  const char *description;
+  const char*   description;
   test_function function;
 };
 
@@ -553,18 +572,19 @@ struct testcase testcases[] = {
 };
 
 int
-main(int argc, char **argv)
+main(int argc, char** argv)
 {
   int total_tests, current;
   crypto_init();
   test_setting_init();
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
-		 settings.passphrase, settings.plen, 1, (u8*)settings.key, (u8*)settings.iv);
+		 settings.passphrase, settings.plen, 1, (u8*)settings.key,
+		 (u8*)settings.iv);
   total_tests = (int)sizeof(testcases)/sizeof(testcases[0]);
+
   for (current = 0; current < total_tests; current++)
-    {
       testcases[current].function();
-    }
+
   crypto_shutdown();
-  return 0;
+  exit(0);
 }
