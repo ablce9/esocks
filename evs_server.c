@@ -4,7 +4,7 @@
  *
  */
 
-#define MAX_OUTPUT (1024*512)
+#define MAX_OUTPUT (4096*512)
 #define BACKLOG 1024
 
 #include "evs-internal.h"
@@ -423,7 +423,7 @@ socks_initcb(struct bufferevent *bev, void *ctx)
     }
   else
     {
-      log_i("socks_initcb(): wrong version");
+      log_i("socks_initcb(): wrong version=%d", dec_buf[0]);
       context->st = ev_destroy;
       ev_free_context(context);
     }
