@@ -15,7 +15,7 @@ esocks_SOURCES = evs_server.c evs_server.h \
 		  evs_helper.c evs_helper.h \
 		  crypto.c crypto.h \
 		  evs_lru.c evs_lru.h \
-		  evs_relay.c main.c
+		  evs_relay.c daemon.c esocks.c
 
 test: testapp
 	$(srcdir)/testapp

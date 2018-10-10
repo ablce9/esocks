@@ -14,7 +14,7 @@ config.guess
 compile
 depcomp
 stamp-h1
-esocks*
+esocks
 missing
 install-sh
 INSTALL

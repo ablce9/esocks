@@ -63,6 +63,7 @@ run_srv(void)
   struct timeval dns_cache_tval = {settings.dns_cache_tval, 0};
   void* proxy = NULL;
   int fd;
+  int signal_flags = 0;
   int socktype = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 
   memset(&sin, 0, sizeof(sin));
@@ -129,7 +130,8 @@ run_srv(void)
   event_add(signal_event, NULL);
 
   // SIGPIPE happens when connections are reset by peers
-  sigpipe_event = event_new(ev_base, SIGPIPE,
+  signal_flags |= SIGPIPE;
+  sigpipe_event = event_new(ev_base, signal_flags,
 			    EV_SIGNAL|EV_PERSIST, pass_through_func, (void*)ev_base);
   event_add(sigpipe_event, NULL);
 

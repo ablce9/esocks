@@ -73,6 +73,7 @@ struct settings {
   u8*                  passphrase;
   int                  plen;
   long                 dns_cache_tval;
+  _Bool                daemon_mode;
 };
 
 extern struct settings settings;
