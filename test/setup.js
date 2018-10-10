@@ -1,3 +1,5 @@
+'use strict;';
+
 const assert = require('assert');
 const net = require('net');
 const fs = require('fs');
@@ -13,7 +15,7 @@ function echoServer (options) {
         conn.pipe(conn);
     });
     server.listen(options, function() {
-        console.log('sandbox server is up and running');
+        console.error('sandbox server is up and running');
     });
 }
 
@@ -23,7 +25,7 @@ function getEsocks () {
         return bin;
 
     console.error('esocks doesn\'t exist!');
-    return 1;
+    process.exit(1);
 }
 
 /**
