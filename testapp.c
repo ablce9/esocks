@@ -473,7 +473,6 @@ void test_crypto(void)
 
   outl = openssl_encrypt(c1, out, in, sizeof(in));
   u8 dec_buf[outl];
-  printf("len=%d, buf=%d\n", (int)sizeof(in), outl);
   outl = openssl_decrypt(c2, dec_buf, out, outl);
 
   MEMCMP(in, dec_buf, outl);
@@ -551,6 +550,29 @@ test_stream_encryption(void)
   EVP_CIPHER_CTX_free(c2);
 }
 
+static void
+test_can_read_conf_file()
+{
+  const char *filename = "./sample_esocks.conf";
+  struct settings st;
+
+  memset(&st, 0, sizeof(struct settings));
+  if (ev_parse_conf_file(&st, filename) != 0)
+    test_failed("ev_parse_conf_file()");
+
+  assert(strcmp(st.cipher_name, "aes-256-cfb") == 0);
+  assert(st.dns_cache_tval == 6500);
+  assert(!st.daemon_mode);
+  assert(strcmp((const char*)st.passphrase, "thisIsMyPassword") == 0);
+  assert(strcmp((const char*)st.listen_addr, "127.0.0.1") == 0);
+  assert(st.listen_port == 3080);
+  assert(strcmp((const char*)st.resolv_conf, "/etc/resolv.conf.dev") == 0);
+  assert(strcmp((const char*)st.server_addr, "1.2.3.4") == 0);
+  assert(st.server_port == 3081);
+  assert(st.workers == 2);
+  test_ok("%s", __func__);
+}
+
 typedef void(*test_function)(void);
 
 struct testcase {
@@ -569,6 +591,7 @@ struct testcase testcases[] = {
   {"test_crypto", test_crypto},
   {"test_wrapped_crypto", test_wrapped_crypto},
   {"test_stream_encryption", test_stream_encryption},
+  {"test_can_read_config_file", test_can_read_conf_file},
 };
 
 int

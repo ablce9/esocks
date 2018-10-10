@@ -71,8 +71,8 @@ run_srv(void)
 
   if (settings.relay_mode)
     {
-      sin.sin_port = htons(settings.srv_port);
-      if (!(evutil_inet_pton(AF_INET, settings.srv_addr,
+      sin.sin_port = htons(settings.listen_port);
+      if (!(evutil_inet_pton(AF_INET, settings.listen_addr,
 			     (struct sockaddr*)&sin.sin_addr)))
 	log_ex(1, "run_srv(): evutil_inet_pton()");
 
@@ -89,8 +89,8 @@ run_srv(void)
     }
   else
     {
-      sin.sin_port = htons(settings.srv_port);
-      if (!(evutil_inet_pton(AF_INET, settings.srv_addr,
+      sin.sin_port = htons(settings.listen_port);
+      if (!(evutil_inet_pton(AF_INET, settings.listen_addr,
 			     (struct sockaddr*)&sin.sin_addr)))
 	log_ex(1, "run_srv(): evutil_inet_pton()");
     }
@@ -298,7 +298,7 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
   struct bufferevent* bev;
   struct bufferevent* partner;
   struct ev_context_s* context;
-  struct timeval tval = {settings.timeout, 0};
+  struct timeval tval = {settings.connection_timeout, 0};
 
   bev = bufferevent_socket_new(ev_base, fd,
 			       BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);

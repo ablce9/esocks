@@ -13,6 +13,7 @@
 #include "evs_log.h"
 #include "evs_server.h"
 #include "evs_version.h"
+#include "evs_helper.h"
 
 struct settings settings;
 
@@ -28,14 +29,14 @@ static void
 settings_init(void)
 {
 #define DEFAULT_SERVER_PORT 1080
-  settings.srv_addr = "0.0.0.0";
-  settings.srv_port = DEFAULT_SERVER_PORT;
+  settings.listen_addr = "0.0.0.0";
+  settings.listen_port = DEFAULT_SERVER_PORT;
   settings.server_addr = "0.0.0.0";
   settings.server_port = DEFAULT_SERVER_PORT;
   settings.passphrase = (u8*)"too lame to set password";
   // Timeout for connections made between clients and a server.
 #define DEFAULT_CONNECTION_TIMEOUT 300
-  settings.timeout = DEFAULT_CONNECTION_TIMEOUT;
+  settings.connection_timeout = DEFAULT_CONNECTION_TIMEOUT;
   settings.relay_mode = false;
   settings.resolv_conf = "/etc/resolv.conf";
   settings.nameserver = NULL;
@@ -75,6 +76,7 @@ void usage() {
 	 "\n"
 	 "OPTIONS:\n"
 	 "  -c  cipher name (default aes-256-cfb)\n"
+	 "  -C  path to config file\n"
 	 "  -d  dns cache timeout (default 6500 seconds)\n"
 	 "  -D  enable daemon mode (default false)\n"
 	 "  -j  connect to this port\n"
@@ -98,12 +100,13 @@ main(int argc, char** argv)
   int cc = 0;
   int daemon_nochdir = 0;
   int daemon_noclose = 0;
+  _Bool load_config = false;
 
   crypto_init();
   settings_init();
 
   char* shortopts =
-    // "C:" /* TODO: support config file */
+    "C:" /* TODO: support config file */
     "c:" /* cipher name */
     "d:" /* dns cache timeout */
     "D"  /* TODO: support daemon mode */
@@ -128,6 +131,10 @@ main(int argc, char** argv)
     switch(cc) {
     case 'c':
       settings.cipher_name = optarg;
+      break;
+    case 'C':
+      load_config = true;
+      settings.config_file = optarg;
       break;
     case 'd':
       settings.dns_cache_tval = atol(optarg);
@@ -155,13 +162,13 @@ main(int argc, char** argv)
       port = atoi(optarg);
       if (port < 1 || port > 65535)
 	usage();
-      settings.srv_port = port;
+      settings.listen_port = port;
       break;
     case 's':
-      settings.srv_addr = optarg;
+      settings.listen_addr = optarg;
       break;
     case 't':
-      settings.timeout = atol(optarg);
+      settings.connection_timeout = atol(optarg);
       break;
     case 'u':
       settings.server_addr = optarg;
@@ -178,16 +185,21 @@ main(int argc, char** argv)
     }
   }
 
+  if (load_config)
+    if (ev_parse_conf_file(&settings, settings.config_file) != 0)
+      log_ex(1, "cannot find config file: %s", settings.config_file);
+
   settings.plen = strlen((char*)settings.passphrase);
+
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
+  if (settings.cipher == NULL)
+    log_ex(1, "failed to set cipher: %s", settings.cipher_name);
+
   settings.dgst = EVP_md5();
 
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
 		 settings.passphrase, settings.plen, 1, (u8*)settings.key,
 		 (u8*)settings.iv);
-
-  if (settings.cipher == NULL)
-    log_ex(1, "setting cipher %s", settings.cipher_name);
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 
@@ -196,12 +208,13 @@ main(int argc, char** argv)
 
   if (settings.relay_mode)
     log_i("listening on %s:%d and connect to %s:%d",
-	  settings.srv_addr, settings.srv_port, settings.server_addr, settings.server_port);
+	  settings.listen_addr, settings.listen_port, settings.server_addr,
+	  settings.server_port);
   else
-      log_i("listening on %s:%d", settings.srv_addr, settings.srv_port);
+      log_i("listening on %s:%d", settings.listen_addr, settings.listen_port);
 
   log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
-	settings.timeout, settings.cipher_name);
+	settings.connection_timeout, settings.cipher_name);
 
   if (settings.workers)
     ev_do_fork(settings.workers);

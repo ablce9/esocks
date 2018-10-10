@@ -34,5 +34,8 @@ int resolve_host(socks_name_t*);
 #endif
 
 char* ev_copy(char* dst, char* src, size_t s);
+void ev_parse_line(char* const start);
+int ev_read_file(const char* filename, char** out, int* out_len);
+int ev_parse_conf_file(struct settings* st, const char* filename);
 
 #endif

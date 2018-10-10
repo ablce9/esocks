@@ -54,9 +54,9 @@
 
 struct settings {
   struct socksaddr_in* proxy;
-  int                  timeout;
-  const char*          srv_addr;
-  short                srv_port;
+  int                  connection_timeout;
+  const char*          listen_addr;
+  short                listen_port;
   const char*          server_addr;
   short                server_port;
   int                  workers;
@@ -74,6 +74,7 @@ struct settings {
   int                  plen;
   long                 dns_cache_tval;
   _Bool                daemon_mode;
+  const char*          config_file;
 };
 
 extern struct settings settings;
