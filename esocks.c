@@ -90,6 +90,7 @@ void usage() {
 	 "  -n  worker number\n"
 	 "  -o  path to resolver conf file (default /etc/resolv.conf)\n"
 	 "  -p  bind to this port (default 1080)\n"
+	 "  -P  write PID file (default /var/run/esocks.pid\n"
 	 "  -s  bind to this address (default 0.0.0.0)\n"
 	 "  -u  connect to this server address\n"
 	 "  -t  timeout for connections (default 300 seconds)\n"
