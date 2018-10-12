@@ -8,6 +8,8 @@
  *
  */
 
+#include <sys/wait.h>
+#include <signal.h>
 #include "evs-internal.h"
 #include "crypto.h"
 #include "evs_log.h"
@@ -20,6 +22,9 @@ struct settings settings;
 static void settings_init(void);
 static void usage(void);
 static void fatal_error_cb(int err);
+static void ev_do_fork(int workers);
+static void save_pid(const char* pid_file);
+static void remove_pid(const char* pid_file);
 
 static void fatal_error_cb(int err) {
   log_e("fata_error_cb got=%d\n", err);
@@ -51,6 +56,7 @@ settings_init(void)
 #define DEFAULT_WORKER_NUMBER 0
   settings.workers = DEFAULT_WORKER_NUMBER;
   settings.daemon_mode = false;
+  settings.pid_file = "/var/run/esocks.pid";
 
   // TODO: refactor, this ain't good for security!
   const u8 key16[16] = {
@@ -93,6 +99,79 @@ void usage() {
   exit(1);
 }
 
+static void
+ev_do_fork(int workers)
+{
+ int j;
+ pid_t pid;
+ pid_t pids[workers];
+
+ log_i("fork(): parent pid=%ld", (long)getpid());
+ for (j = 0; j < workers; j++) {
+   if ((pid = fork()) == 0) {
+     // child process
+     log_i("fork(): child pid=%ld", (long)getpid());
+     run_srv();
+     exit(0);
+   }
+   else
+     pids[j] = pid;
+ }
+
+ run_srv();
+ log_i("event_loopexit(): parent's loop just exited.");
+
+  for (j = 0; j < workers; j++) {
+    int status;
+    kill(pids[j], SIGTERM);
+    if ((waitpid(pids[j], &status, 0)) == -1)
+      log_e("waitpid()");
+
+    if (WIFEXITED(status))
+      log_i("WIFEXITED(): child excited");
+    if (WIFSIGNALED(status))
+      log_i("WIFSIGNALED(): child killed by signal");
+  }
+}
+
+static void
+save_pid(const char* pid_file)
+{
+  FILE* fp;
+
+  if ((fp = fopen(pid_file, "r")) != NULL)
+    {
+      char buf[1024];
+      if (fgets(buf, sizeof(buf), fp) != NULL)
+	{
+	  char* endptr;
+	  pid_t pid;
+	  if ((pid = strtoul(buf, &endptr, 10)) && kill((pid_t)pid, SIGTERM) == 0)
+	    {
+	      log_warn("The pid file contained pid: %u", pid);
+	    }
+	}
+      fclose(fp);
+    }
+  if ((fp = fopen(pid_file, "w")) != NULL)
+    {
+      fprintf(fp, "%ld\n", (long)getpid());
+      fclose(fp);
+    }
+  else
+    log_ex(1, "fopen(%ld, w)", (long)getpid());
+}
+
+static void
+remove_pid(const char* pid_file)
+{
+  if (pid_file == NULL)
+    return;
+
+  if (unlink(pid_file) != 0)
+    log_ex(1, "unlink(%s)", pid_file);
+}
+
 int
 main(int argc, char** argv)
 {
@@ -116,7 +195,7 @@ main(int argc, char** argv)
     "n:" /* TODO: support worker number */
     "o:" /* Path to resolver conf */
     "p:" /* Bind to this port */
-    // "P:" /* TODO: Save PID file */
+    "P:" /* TODO: Save PID file */
     // "r:" /* TODO: read rate limit */
     "s:" /* Bind to this address */
     "t:" /* Timeout for connections */
@@ -164,6 +243,9 @@ main(int argc, char** argv)
 	usage();
       settings.listen_port = port;
       break;
+    case 'P':
+      settings.pid_file = optarg;
+      break;
     case 's':
       settings.listen_addr = optarg;
       break;
@@ -203,6 +285,8 @@ main(int argc, char** argv)
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 
+  save_pid(settings.pid_file);
+
   if (settings.daemon_mode)
     daemonize(daemon_nochdir, daemon_noclose);
 
@@ -221,5 +305,6 @@ main(int argc, char** argv)
   else
     (void)run_srv();
 
+  remove_pid(settings.pid_file);
   exit(0);
 }

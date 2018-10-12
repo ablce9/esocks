@@ -75,6 +75,7 @@ struct settings {
   long                 dns_cache_tval;
   _Bool                daemon_mode;
   const char*          config_file;
+  const char*          pid_file;
 };
 
 extern struct settings settings;

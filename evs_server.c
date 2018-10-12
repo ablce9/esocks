@@ -13,7 +13,6 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <signal.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -125,7 +124,7 @@ run_srv(void)
     goto err;
 
   ev_base = event_base_new();
-  signal_event = event_new(ev_base, SIGTERM|SIGKILL,
+  signal_event = event_new(ev_base, SIGTERM|SIGKILL|SIGINT,
 			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)ev_base);
   event_add(signal_event, NULL);
 
@@ -969,39 +968,4 @@ int
 ev_decrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
 {
   return openssl_decrypt(ctx, out, in, ilen);
-}
-
-void
-ev_do_fork(int workers)
-{
- int j;
- pid_t pid;
- pid_t pids[workers];
-
- log_i("fork(): parent pid=%ld", (long)getpid());
- for (j = 0; j < workers; j++) {
-   if ((pid = fork()) == 0) {
-     // child process
-     log_i("fork(): child pid=%ld", (long)getpid());
-     run_srv();
-     exit(0);
-   }
-   else
-     pids[j] = pid;
- }
-
- run_srv();
- log_i("event_loopexit(): parent's loop just exited.");
-
-  for (j = 0; j < workers; j++) {
-    int status;
-    kill(pids[j], SIGTERM);
-    if ((waitpid(pids[j], &status, 0)) == -1)
-      log_e("waitpid()");
-
-    if (WIFEXITED(status))
-      log_i("WIFEXITED(): child excited");
-    if (WIFSIGNALED(status))
-      log_i("WIFSIGNALED(): child killed by signal");
-  }
 }
