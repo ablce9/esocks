@@ -29,9 +29,12 @@
 #include "evs_helper.h"
 #include "crypto.h"
 
+/* Global settings */
 struct settings settings;
 static struct event_base* ev_base = NULL;
 static struct evdns_base* dns_base = NULL;
+
+/* Lru node for dns cache */
 static struct lru_node_s* node = NULL;
 
 static void signal_func(evutil_socket_t sig_flag, short what, void* ctx);
@@ -123,18 +126,31 @@ run_srv(void)
   if (listen(fd, BACKLOG) < 0)
     goto err;
 
+#if defined(LIBEVENT_VERSION_NUMBER) && LIBEVENT_VERSION_NUMBER >= 0x02000100
+  log_d(DEBUG, "setting LIBEVENT_BASE_FLAG_USE_EPOLL_CHANGELIST");
+  /* Let's use a cool feature from libevent:
+     Setting this flag can make your code run faster, but it may trigger a Linux bug:
+     it is not safe to use this flag if you have any fds cloned by dup() or its variants.
+     Doing so will produce strange and hard-to-diagnose bugs. */
+  struct event_config *ev_conf;
+  ev_conf = event_config_new();
+  event_config_set_flag(ev_conf, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
+  ev_base = event_base_new_with_config(ev_conf);
+  event_config_free(ev_conf);
+#else
   ev_base = event_base_new();
+#endif
+
   signal_event = event_new(ev_base, SIGTERM|SIGKILL|SIGINT,
 			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)ev_base);
   event_add(signal_event, NULL);
 
-  // SIGPIPE happens when connections are reset by peers
+  /* SIGPIPE happens when connection is reset by peer. */
   signal_flags |= SIGPIPE;
   sigpipe_event = event_new(ev_base, signal_flags,
 			    EV_SIGNAL|EV_PERSIST, pass_through_func, (void*)ev_base);
   event_add(sigpipe_event, NULL);
 
-  // Set Listener callback
   listen_event = event_new(ev_base, fd,
 			   EV_READ|EV_PERSIST, listen_func, NULL);
   event_add(listen_event, NULL);
@@ -145,7 +161,6 @@ run_srv(void)
 
       log_i("run_srv(): start DNS service");
 
-      // Start asynchronous dns services.
       dns_base = evdns_base_new(ev_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
 	log_ex(1, "run_srv(): evdns_base_new");
@@ -153,7 +168,6 @@ run_srv(void)
       if (DEBUG)
 	evdns_set_log_fn(dns_logfn);
 
-      // Configure nameservers.
       if (settings.nameserver)
 	log_ex(1, "run_srv(): failed to add nameserver(s)");
 
@@ -167,7 +181,6 @@ run_srv(void)
       cache_config.cache = node;
       cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
-      // Clean dns cache with timeout.
       handle_dns_cache = event_new(ev_base, -1,
 				   EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
 				   (void*)&cache_config);
@@ -285,7 +298,7 @@ ev_free_context(struct ev_context_s* ctx)
 	  EVP_CIPHER_CTX_cleanup(ctx->evp_decipher_ctx);
 	  EVP_CIPHER_CTX_free(ctx->evp_decipher_ctx);
 	}
-      // To avoid double free, make sure a ctx becomes NULL.
+      /* To avoid double free, make sure a ctx becomes NULL. */
       ctx = NULL;
       free(ctx);
     }
@@ -362,7 +375,6 @@ eventcb(struct bufferevent* bev, short what, void* ctx)
 
   partner = context->reversed ? context->bev : context->partner;
 
-  // Simple analyzer to log events
   event_logger(what, context);
 
   if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT))

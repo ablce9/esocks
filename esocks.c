@@ -143,22 +143,18 @@ save_pid(const char* pid_file)
   if ((fp = fopen(pid_file, "r")) != NULL)
     {
       char buf[1024];
-      if (fgets(buf, sizeof(buf), fp) != NULL)
-	{
-	  char* endptr;
-	  pid_t pid;
-	  if ((pid = strtoul(buf, &endptr, 10)) && kill((pid_t)pid, SIGTERM) == 0)
-	    {
-	      log_warn("The pid file contained pid: %u", pid);
-	    }
-	}
+      if (fgets(buf, sizeof(buf), fp) != NULL) {
+	char* endptr;
+	pid_t pid;
+	if ((pid = strtoul(buf, &endptr, 10)) && kill((pid_t)pid, SIGTERM) == 0)
+	  log_warn("The pid file contained pid: %u", pid);
+      }
       fclose(fp);
     }
-  if ((fp = fopen(pid_file, "w")) != NULL)
-    {
-      fprintf(fp, "%ld\n", (long)getpid());
-      fclose(fp);
-    }
+  if ((fp = fopen(pid_file, "w")) != NULL) {
+    fprintf(fp, "%ld\n", (long)getpid());
+    fclose(fp);
+  }
   else
     log_ex(1, "fopen(%ld, w)", (long)getpid());
 }
