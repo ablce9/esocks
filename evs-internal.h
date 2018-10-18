@@ -48,7 +48,7 @@
 #endif
 
 /* socks version  */
-# define SOCKS_VERSION 5
+#define SOCKS_VERSION 5
 
 #define SOCKS_MAX_BUFFER_SIZE 4096
 
@@ -94,9 +94,9 @@ typedef enum {
 } socks_reply_e;  /* server replies */
 
 /* address type */
-# define IPV4        1
-# define DOMAINN     3
-# define IPV6        4
+# define IPV4    1
+# define DOMAINN 3
+# define IPV6    4
 
 # define SOCKS_INET_ADDRSTRLEN  (sizeof("255.255.255.255") - 1)
 # define SOCKS_INET6_ADDRSTRLEN \

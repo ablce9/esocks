@@ -343,11 +343,12 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
       if (bufferevent_socket_connect(context->partner, (struct sockaddr*)sin,
 				     sizeof(struct sockaddr_in)) != 0)
 	{
-	  DEBUG ? log_ex(1, "accept_func(): connect() failed to connect")
-	    : log_e("accept_func(): failed to connect");
+	  u8 reply[2] = {5, NETWORK_UNREACHABLE};
 
+	  log_e("bufferevent_socket_connect(): failed to connect");
+	  bufferevent_write(bev, reply, 2);
 	  context->st = ev_destroy;
-	  bufferevent_setcb(bev, NULL, err_writecb, eventcb, context);
+	  ev_free_context(context);
 	}
 
       if (context->st == ev_init)
@@ -424,10 +425,10 @@ socks_initcb(struct bufferevent *bev, void *ctx)
 
   log_i("socks_initcb(): getting client and have %ld bytes", buf_size);
 
-  if (dec_buf[0] == 5)
+  if (dec_buf[0] == SOCKS_VERSION)
     {
       // enc
-      u8 p[2] = {5, 0};
+      u8 p[2] = {SOCKS_VERSION, SUCCEEDED};
       outl = ev_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
       bufferevent_write(bev, enc_buf, outl);
       context->st = ev_init;
@@ -470,7 +471,7 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
   u8 portbuf[2];
   u8 buf4[4];
   u8 domain[256];
-  u8 socks_reply[10] = {5, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0};
+  u8 socks_reply[10] = {SOCKS_VERSION, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0};
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
 
@@ -863,16 +864,6 @@ close_on_finished_writecb(struct bufferevent* bev, void* ctx)
       log_d(DEBUG, "close_on_finished_writecb");
       ev_free_context(ctx);
     }
-}
-
-void
-err_writecb(struct bufferevent* bev, void* ctx)
-{
-  u8 msg[2] = {5, 1};
-
-  if (bufferevent_write(bev, msg, 2) != 0)
-    log_e("failed to write an error message");
-
 }
 
 static void
