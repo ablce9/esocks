@@ -47,7 +47,9 @@ static void next_readcb(struct bufferevent* bev, void* ctx);
 static void print_address(struct sockaddr* sa, int type, const char* ctx);
 static void event_logger(short what, struct ev_context_s* ctx);
 static void unchoke_writecb(struct bufferevent* bev, void* ctx);
-static void dns_logfn(int is_warn, const char* msg);
+static void libevent_dns_logfn(int is_warn, const char* msg);
+static void libevent_logfn(int severity, const char* msg);
+
 static struct ev_context_s* ev_new_context(void);
 static void ev_free_context(struct ev_context_s* ctx);
 const char* _getprogname(void) { return "esocks"; }
@@ -100,6 +102,11 @@ run_srv(void)
   fd = socket(AF_INET, socktype, 0);
   if (fd == -1)
     goto err;
+
+  if (DEBUG) {
+    event_set_log_callback(libevent_logfn);
+    evdns_set_log_fn(libevent_dns_logfn);
+  }
 
 #if defined(HAVE_TCP_FASTOPEN) && defined(HAVE_TCP_NODELAY)
   int optval = 5;
@@ -164,9 +171,6 @@ run_srv(void)
       dns_base = evdns_base_new(ev_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
 	log_ex(1, "run_srv(): evdns_base_new");
-
-      if (DEBUG)
-	evdns_set_log_fn(dns_logfn);
 
       if (settings.nameserver)
 	log_ex(1, "run_srv(): failed to add nameserver(s)");
@@ -916,8 +920,30 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void* ctx)
 }
 
 static void
-dns_logfn(int is_warn, const char* msg) {
-  fprintf(stderr, "%s: %s\n", is_warn ? "WARN" : "INFO", msg);
+libevent_dns_logfn(int is_warn, const char* msg) {
+  if (DEBUG)
+    is_warn ? log_warn(msg) : log_i(msg);
+}
+
+static void
+libevent_logfn(int severity, const char* msg)
+{
+  switch (severity) {
+  case EVENT_LOG_DEBUG:
+    log_i(msg);
+    break;
+  case EVENT_LOG_MSG:
+    log_i(msg);
+    break;
+  case EVENT_LOG_WARN:
+    log_warn(msg);
+    break;
+  case EVENT_LOG_ERR:
+    log_e(msg);
+    break;
+  default:
+    break;
+  }
 }
 
 static void
