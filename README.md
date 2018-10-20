@@ -31,8 +31,8 @@ tcp    0      128                                  127.0.0.1:1080               
  - autotools(whatever version. I didn't pay attention to the version... newer is better.)
 
 ## TODO
- - Make valgrind stop complaining about memory leak stuff. There seems nasty leaks around lru cache.
- - ~~Need a breakthrough in crpyto.c. Cannot figure out how to handle successive buffer.~~ Use stream ciphers instead of block ciphers.
+ - Support socks authentications
+ - Write log file
  - key and initial vector for EVP_CIPHER_CTX is hard-coded now, so let's come up with some idea not to do so.
 
 ## What the heck is this?

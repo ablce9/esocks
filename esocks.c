@@ -105,10 +105,11 @@ ev_do_fork(int workers)
 {
  int j;
  pid_t pid;
- pid_t pids[workers];
+ int workers_ = workers-1;
+ pid_t pids[workers_];
 
  log_i("fork(): parent pid=%ld", (long)getpid());
- for (j = 0; j < workers; j++) {
+ for (j = 0; j < workers_; j++) {
    if ((pid = fork()) == 0) {
      // child process
      log_i("fork(): child pid=%ld", (long)getpid());
@@ -122,7 +123,7 @@ ev_do_fork(int workers)
  run_srv();
  log_i("event_loopexit(): parent's loop just exited.");
 
-  for (j = 0; j < workers; j++) {
+  for (j = 0; j < workers_; j++) {
     int status;
     kill(pids[j], SIGTERM);
     if ((waitpid(pids[j], &status, 0)) == -1)
