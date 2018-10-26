@@ -1,5 +1,5 @@
-#ifndef EVS_LRU_H
-#define EVS_LRU_H
+#ifndef esocks_lru_h
+#define esocks_lru_h
 
 #include <sys/time.h>
 #include <sys/socket.h>

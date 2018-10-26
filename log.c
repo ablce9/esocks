@@ -1,17 +1,13 @@
-/*
- * slog.c
- */
-
+#include <errno.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
-#include <errno.h>
 
 #include <event2/util.h>
 
-#include "evs_log.h"
+#include "log.h"
 
 static void socks_log(int serverity, const char* msg);
 

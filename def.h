@@ -1,6 +1,4 @@
 /*
- * internal.h
- *
  * Use of this source code is governed by a
  * license that can be found in the LICENSE file.
  *
@@ -8,8 +6,8 @@
 */
 
 
-#ifndef INTERNAL_H
-#define INTERNAL_H
+#ifndef esocks_def_h
+#define esocks_def_h
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"

@@ -24,4 +24,4 @@ configure
 testapp
 node_modules/
 package-lock.json
-evs_version.h
+version.h

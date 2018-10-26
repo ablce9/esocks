@@ -1,10 +1,11 @@
 #include <fcntl.h>
 
 #include <event2/dns.h>
-#include "./evs-internal.h"
-#include "./evs_server.h"
-#include "./evs_lru.h"
-#include "./evs_helper.h"
+
+#include "./def.h"
+#include "./server.h"
+#include "./lru.h"
+#include "./helper.h"
 #include "./crypto.h"
 
 #define MEMCMP(a, b, s)	  \
@@ -293,7 +294,7 @@ test_resolve_cb(void)
   struct event_base* base;
   struct evutil_addrinfo hints;
   struct evutil_addrinfo* res;
-  struct ev_context_s* ctx;
+  struct e_context_s* ctx;
   struct bufferevent* partner;
   int i;
   int err;
@@ -311,12 +312,12 @@ test_resolve_cb(void)
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = IPPROTO_TCP;
 
-  ctx = calloc(1, sizeof(struct ev_context_s));
+  ctx = calloc(1, sizeof(struct e_context_s));
   assert(ctx);
 
-  ctx->st = ev_dns_wip;
+  ctx->st = e_dns_wip;
   ctx->port = 80;
-  ev_copy(ctx->domain, hostname, strlen(hostname));
+  e_copy(ctx->domain, hostname, strlen(hostname));
   partner = bufferevent_socket_new(base, -1,
 				   BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
   ctx->partner = partner;
@@ -326,7 +327,7 @@ test_resolve_cb(void)
   resolvecb(err, res, ctx);
 
   assert(ctx->socks_addr->naddrs > 0);
-  assert(ctx->st == ev_connected);
+  assert(ctx->st == e_connected);
 
   bufferevent_free(ctx->partner);
 
@@ -349,8 +350,8 @@ test_event_cb(void)
   struct bufferevent* partner0;
   struct bufferevent* bev1;
   struct bufferevent* partner1;
-  struct ev_context_s ctx0;
-  struct ev_context_s ctx1;
+  struct e_context_s ctx0;
+  struct e_context_s ctx1;
   short what = 0;
 
   base = event_base_new();
@@ -362,8 +363,8 @@ test_event_cb(void)
   bev1 = bufferevent_socket_new(base, -1, 0);
   partner1 = bufferevent_socket_new(base, -1, 0);
 
-  memset(&ctx0, 0, sizeof(struct ev_context_s));
-  memset(&ctx1, 0, sizeof(struct ev_context_s));
+  memset(&ctx0, 0, sizeof(struct e_context_s));
+  memset(&ctx1, 0, sizeof(struct e_context_s));
   what |= BEV_EVENT_EOF;
 
   assert(bev0 && partner0 && bev1 && partner1);
@@ -406,7 +407,7 @@ test_close_on_finished_writecb(void)
   struct event_base* base;
   struct bufferevent* bev;
   struct bufferevent* partner;
-  struct ev_context_s ctx;
+  struct e_context_s ctx;
   struct timeval tv;
   short what = 0;
   u8 buffer[1024];
@@ -503,9 +504,9 @@ void test_wrapped_crypto(void)
     CIPHER_INIT(c1, settings.cipher, settings.key, settings.iv, 1);
     CIPHER_INIT(c2, settings.cipher, settings.key, settings.iv, 0);
 
-    outl = ev_encrypt(c1, in, sizeof(in), enc_buf);
+    outl = e_encrypt(c1, in, sizeof(in), enc_buf);
     u8 dec_buf[outl];
-    outl = ev_decrypt(c2, enc_buf,outl, dec_buf);
+    outl = e_decrypt(c2, enc_buf,outl, dec_buf);
 
     assert(memcmp(in, dec_buf, outl) == 0);
     EVP_CIPHER_CTX_free(c1);
@@ -540,8 +541,8 @@ test_stream_encryption(void)
     int dec_total = 0;
     i += 517;
     memcpy(in, buf, i);
-    ev_encrypt(c1, in, i, enc_buf);
-    dec_total += ev_decrypt(c2, enc_buf, i, dec_buf);
+    e_encrypt(c1, in, i, enc_buf);
+    dec_total += e_decrypt(c2, enc_buf, i, dec_buf);
     assert(memcmp(in, dec_buf, dec_total) == 0);
   } while(i < buf_size);
 
@@ -557,8 +558,8 @@ test_can_read_conf_file()
   struct settings st;
 
   memset(&st, 0, sizeof(struct settings));
-  if (ev_parse_conf_file(&st, filename) != 0)
-    test_failed("ev_parse_conf_file()");
+  if (e_parse_conf_file(&st, filename) != 0)
+    test_failed("e_parse_conf_file()");
 
   assert(strcmp(st.cipher_name, "aes-256-cfb") == 0);
   assert(st.dns_cache_tval == 6500);

@@ -4,9 +4,9 @@
  *
  */
 
-#include "evs-internal.h"
-#include "evs_lru.h"
-#include "evs_log.h"
+#include "def.h"
+#include "lru.h"
+#include "log.h"
 
 static lru_node_t* lru_tail = NULL; // The tail of node
 static lru_node_t* get_node(lru_node_t** node_pptr, void* key, lru_cmp_func* func);

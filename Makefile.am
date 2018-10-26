@@ -4,18 +4,18 @@ noinst_PROGRAMS = testapp
 ACLOCAL_AMFLAGS = -I m4
 
 testapp_SOURCES = testapp.c \
-		evs_server.c evs_server.h \
-		evs_log.c evs_log.h \
-		evs_helper.c evs_helper.h \
+		server.c server.h \
+		log.c log.h \
+		helper.c helper.h \
 		crypto.c crypto.h \
-		evs_lru.c evs_lru.h evs_relay.c
+		lru.c lru.h relay.c
 
-esocks_SOURCES = evs_server.c evs_server.h \
-		  evs_log.c evs_log.h \
-		  evs_helper.c evs_helper.h \
+esocks_SOURCES = server.c server.h \
+		  log.c log.h \
+		  helper.c helper.h \
 		  crypto.c crypto.h \
-		  evs_lru.c evs_lru.h \
-		  evs_relay.c daemon.c esocks.c
+		  lru.c lru.h \
+		  relay.c daemon.c esocks.c
 
 test: testapp
 	$(srcdir)/testapp

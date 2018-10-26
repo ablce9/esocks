@@ -1,112 +1,19 @@
-#include "evs-internal.h"
-
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <netinet/in.h>
 
 #include <event2/util.h>
 
-#include "evs_helper.h"
-#include "evs_log.h"
+#include "def.h"
+#include "helper.h"
+#include "log.h"
 
-static char* ev_copy_(char* dst, char* src, size_t s);
-static void parse_conf_line(struct settings* st, char* const start);
+static void e_parse_conf_line(struct settings* st, char* const start);
 
-#ifdef HAVE_GETADDRINFO
-/*
- * resolve_domain is a helper function using getaddrinfo as backend.
- * Unlike Libevent's evdns_getaddrinfo and getaddrinfo_a this function blocks processes.
- */
-int
-resolve_domain(socks_name_t* n)
-{
-  struct addrinfo hints;
-  struct addrinfo* res;
-  struct addrinfo* p;
-  struct sockaddr_in* sin;
-  int i;
-  char* domain;
-
-  domain = malloc(n->hlen + 1);
-  assert(!domain);
-
-  (void) ev_copy(domain, n->domain, n->hlen);
-
-  log_d(DEBUG, "resolve: \"%s\"", domain);
-
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-
-  if (getaddrinfo((char *)domain, NULL, &hints, &res) != 0) {
-    log_e("domain not found");
-    free(domain);
-    return -1;
-  }
-
-  free(domain);
-
-  for (i =0, p =res; p != NULL; p = p->ai_next) {
-    switch(p->ai_family) {
-    case AF_INET:
-    case AF_INET6:
-      break;
-    default:
-      continue;
-    }
-    i++;
-  }
-
-  if (i == 0) { /* no results */
-    log_e("domain not found");
-    goto failed;
-  }
-
-  n->addrs = malloc(i * sizeof(socks_addr_t));
-  assert(n->addrs != NULL);
-
-  n->addrs->naddrs = i;
-  i = 0;
-
-  for (p =res; p !=NULL; p =p->ai_next) {
-
-    // #define have_netinet_in6_h
-    if (p->ai_family != AF_INET)
-      continue;
-
-    sin = malloc(sizeof(struct sockaddr_in));
-    assert(!sin != NULL);
-
-    memcpy(sin, p->ai_addr, p->ai_addrlen);
-
-    sin->sin_port = n->port;
-
-    n->addrs[i].sockaddr = (struct sockaddr*)sin;
-    n->addrs[i].socklen = p->ai_addrlen;
-
-    i++;
-    break;
-  }
-
-  freeaddrinfo(res);
-  return 0;
-
- failed:
-  freeaddrinfo(res);
-  return -1;
-}
-
-#endif
-
-char* ev_copy(char* dst, char* src, size_t s)
-{
-  return ev_copy_(dst, src, s);
-}
-
-static char*
-ev_copy_(char* dst, char* src, size_t s)
+char*
+e_copy(char* dst, char* src, size_t s)
 {
 
   while(s--)
@@ -125,7 +32,7 @@ ev_copy_(char* dst, char* src, size_t s)
   return dst;
 }
 
-void ev_parse_line(char* const start)
+void e_parse_line(char* const start)
 {
   char *strtok_state;
   static const char* delims = " \t";
@@ -142,7 +49,7 @@ void ev_parse_line(char* const start)
   Taken from libevent/evutil.c evutil_read_file_
 */
 int
-ev_read_file(const char* filename, char** out, int* out_len)
+e_read_file(const char* filename, char** out, int* out_len)
 {
   struct stat st;
   int fd;
@@ -198,18 +105,18 @@ ev_read_file(const char* filename, char** out, int* out_len)
 }
 
 int
-ev_parse_conf_file(struct settings* st, const char* filename)
+e_parse_conf_file(struct settings* st, const char* filename)
 {
   char *out;
   char *start;
   int err;
   int out_len;
 
-  if ((err = ev_read_file(filename, &out, &out_len)) < 0) {
+  if ((err = e_read_file(filename, &out, &out_len)) < 0) {
     if (err == -1)
-      log_e("ev_parse_config_file(): file doesn't exist");
+      log_e("e_parse_config_file(): file doesn't exist");
     if (err == -2)
-      log_e("ev_parse_config_file(): fatal error");
+      log_e("e_parse_config_file(): fatal error");
     return 1;
   }
 
@@ -217,11 +124,11 @@ ev_parse_conf_file(struct settings* st, const char* filename)
   for ( ;; ) {
     char* const newline = strchr(start, '\n');
     if (!newline) {
-      parse_conf_line(st, start);
+      e_parse_conf_line(st, start);
       break;
     } else {
       *newline = '\0';
-      parse_conf_line(st, start);
+      e_parse_conf_line(st, start);
       start = newline + 1;
     }
   }
@@ -229,7 +136,7 @@ ev_parse_conf_file(struct settings* st, const char* filename)
 }
 
 static void
-parse_conf_line(struct settings* st, char* const start)
+e_parse_conf_line(struct settings* st, char* const start)
 {
   char* first_token;
   char* token_val;

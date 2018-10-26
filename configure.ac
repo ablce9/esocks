@@ -1,7 +1,7 @@
 AC_PREREQ([2.69])
 AC_INIT([esocks], [ESOCKS_VERSION], [shunsuketamiya@posteo.net])
 AC_CANONICAL_HOST
-AC_CONFIG_SRCDIR([evs_server.c])
+AC_CONFIG_SRCDIR([server.c])
 AM_INIT_AUTOMAKE([foreign])
 AM_CONFIG_HEADER([config.h])
 

@@ -7,8 +7,6 @@
 #define MAX_OUTPUT (4096*512)
 #define BACKLOG 1024
 
-#include "evs-internal.h"
-
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -23,39 +21,39 @@
 #include <getopt.h>
 #endif
 
-#include "evs_log.h"
-#include "evs_lru.h"
-#include "evs_server.h"
-#include "evs_helper.h"
+#include "def.h"
+#include "log.h"
+#include "lru.h"
+#include "server.h"
+#include "helper.h"
 #include "crypto.h"
 
 /* Global settings */
 struct settings settings;
-static struct event_base* ev_base = NULL;
+static struct event_base* e_base = NULL;
 static struct evdns_base* dns_base = NULL;
 
 /* Lru node for dns cache */
 static struct lru_node_s* node = NULL;
 
-static void signal_func(evutil_socket_t sig_flag, short what, void* ctx);
-static void pass_through_func(evutil_socket_t sig_flag, short what, void* ctx);
-static void listen_func(evutil_socket_t, short, void*);
-static void accept_func(evutil_socket_t, short, void*);
-static void socks_initcb(struct bufferevent* bev, void* ctx);
-static void parse_header_cb(struct bufferevent* bev, void* ctx);
+static void signalcb(evutil_socket_t sig_flag, short what, void* ctx);
+static void sigpipecb(evutil_socket_t sig_flag, short what, void* ctx);
+static void listencb(evutil_socket_t, short, void*);
+static void acceptcb(evutil_socket_t, short, void*);
+static void initcb(struct bufferevent* bev, void* ctx);
+static void parse_headercb(struct bufferevent* bev, void* ctx);
 static void next_readcb(struct bufferevent* bev, void* ctx);
 static void print_address(struct sockaddr* sa, int type, const char* ctx);
-static void event_logger(short what, struct ev_context_s* ctx);
-static void unchoke_writecb(struct bufferevent* bev, void* ctx);
+static void event_log(short what, struct e_context_s* ctx);
+static void close_writecb(struct bufferevent* bev, void* ctx);
 static void libevent_dns_logfn(int is_warn, const char* msg);
 static void libevent_logfn(int severity, const char* msg);
-
-static struct ev_context_s* ev_new_context(void);
-static void ev_free_context(struct ev_context_s* ctx);
+static struct e_context_s* e_new_context(void);
+static void e_free_context(struct e_context_s* ctx);
 const char* _getprogname(void) { return "esocks"; }
 
 void
-run_srv(void)
+e_start_server(void)
 {
   struct event* signal_event;
   struct event* sigpipe_event;
@@ -139,27 +137,27 @@ run_srv(void)
      Setting this flag can make your code run faster, but it may trigger a Linux bug:
      it is not safe to use this flag if you have any fds cloned by dup() or its variants.
      Doing so will produce strange and hard-to-diagnose bugs. */
-  struct event_config *ev_conf;
-  ev_conf = event_config_new();
-  event_config_set_flag(ev_conf, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
-  ev_base = event_base_new_with_config(ev_conf);
-  event_config_free(ev_conf);
+  struct event_config *e_conf;
+  e_conf = event_config_new();
+  event_config_set_flag(e_conf, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
+  e_base = event_base_new_with_config(e_conf);
+  event_config_free(e_conf);
 #else
-  ev_base = event_base_new();
+  e_base = event_base_new();
 #endif
 
-  signal_event = event_new(ev_base, SIGTERM|SIGKILL|SIGINT,
-			   EV_SIGNAL|EV_PERSIST, signal_func, (void*)ev_base);
+  signal_event = event_new(e_base, SIGTERM|SIGKILL|SIGINT,
+			   EV_SIGNAL|EV_PERSIST, signalcb, (void*)e_base);
   event_add(signal_event, NULL);
 
   /* SIGPIPE happens when connection is reset by peer. */
   signal_flags |= SIGPIPE;
-  sigpipe_event = event_new(ev_base, signal_flags,
-			    EV_SIGNAL|EV_PERSIST, pass_through_func, (void*)ev_base);
+  sigpipe_event = event_new(e_base, signal_flags,
+			    EV_SIGNAL|EV_PERSIST, sigpipecb, (void*)e_base);
   event_add(sigpipe_event, NULL);
 
-  listen_event = event_new(ev_base, fd,
-			   EV_READ|EV_PERSIST, listen_func, NULL);
+  listen_event = event_new(e_base, fd,
+			   EV_READ|EV_PERSIST, listencb, NULL);
   event_add(listen_event, NULL);
 
   if (!settings.proxy)
@@ -168,7 +166,7 @@ run_srv(void)
 
       log_i("run_srv(): start DNS service");
 
-      dns_base = evdns_base_new(ev_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+      dns_base = evdns_base_new(e_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
       if (dns_base == NULL)
 	log_ex(1, "run_srv(): evdns_base_new");
 
@@ -185,18 +183,18 @@ run_srv(void)
       cache_config.cache = node;
       cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
-      handle_dns_cache = event_new(ev_base, -1,
+      handle_dns_cache = event_new(e_base, -1,
 				   EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
 				   (void*)&cache_config);
 
       event_add(handle_dns_cache, &dns_cache_tval);
     }
 
-  event_base_dispatch(ev_base);
+  event_base_dispatch(e_base);
   event_free(signal_event);
   event_free(sigpipe_event);
   event_free(listen_event);
-  event_base_free(ev_base);
+  event_base_free(e_base);
   if (!settings.proxy) {
     evdns_base_free(dns_base, 0);
     lru_purge_all(&node);
@@ -210,7 +208,7 @@ run_srv(void)
 }
 
 static void
-listen_func(evutil_socket_t fd, short what, void* ctx)
+listencb(evutil_socket_t fd, short what, void* ctx)
 {
   int new_fd;
   socklen_t addrlen;
@@ -233,26 +231,26 @@ listen_func(evutil_socket_t fd, short what, void* ctx)
 	}
 
       if (evutil_make_socket_closeonexec(fd) < 0)
-	log_warn("listen_func(): evutil_make_socket_closeonexec()");
+	log_warn("listencb(): evutil_make_socket_closeonexec()");
       if (evutil_make_socket_nonblocking(fd) < 0)
-	log_warn("listen_func(): evutil_make_socket_nonblocking()");
+	log_warn("listencb(): evutil_make_socket_nonblocking()");
 
-      accept_func(new_fd, what, ctx);
+      acceptcb(new_fd, what, ctx);
     }
 
   if (fd == EAGAIN || fd == EWOULDBLOCK || fd == ECONNABORTED || fd == EINTR)
     {
-      log_warn("listen_func(): fd error code=%d", fd);
+      log_warn("listencb(): fd error code=%d", fd);
       evutil_closesocket(new_fd);
     }
 }
 
-static struct ev_context_s*
-ev_new_context(void)
+static struct e_context_s*
+e_new_context(void)
 {
-  struct ev_context_s* ctx;
+  struct e_context_s* ctx;
 
-  ctx = calloc(1, sizeof(struct ev_context_s));
+  ctx = calloc(1, sizeof(struct e_context_s));
 
   if (ctx != NULL)
     {
@@ -279,9 +277,9 @@ ev_new_context(void)
 }
 
 static void
-ev_free_context(struct ev_context_s* ctx)
+e_free_context(struct e_context_s* ctx)
 {
-  if (ctx != NULL && ctx->st == ev_destroy)
+  if (ctx != NULL && ctx->st == e_destroy)
     {
       log_d(DEBUG, "freeing context key=%s", ctx->domain == NULL ? "raw addr" :
 	    ctx->domain);
@@ -309,20 +307,20 @@ ev_free_context(struct ev_context_s* ctx)
 }
 
 static void
-accept_func(evutil_socket_t fd, short what, void* ctx)
+acceptcb(evutil_socket_t fd, short what, void* ctx)
 {
   struct bufferevent* bev;
   struct bufferevent* partner;
-  struct ev_context_s* context;
+  struct e_context_s* context;
   struct timeval tval = {settings.connection_timeout, 0};
 
-  bev = bufferevent_socket_new(ev_base, fd,
+  bev = bufferevent_socket_new(e_base, fd,
 			       BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-  partner = bufferevent_socket_new(ev_base, -1,
+  partner = bufferevent_socket_new(e_base, -1,
 				   BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-  context = ev_new_context();
+  context = e_new_context();
 
   ASSERT(bev && partner && context);
 
@@ -339,7 +337,7 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
       // Set up proxy
       struct sockaddr_in* sin = (struct sockaddr_in*)settings.proxy;
 
-      context->st = ev_init;
+      context->st = e_init;
       context->event_handler = (bufferevent_data_cb*)fast_streamcb;
 
       print_address((struct sockaddr*)&sin->sin_addr, AF_INET, "connect to");
@@ -351,14 +349,14 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
 
 	  log_e("bufferevent_socket_connect(): failed to connect");
 	  bufferevent_write(bev, reply, 2);
-	  context->st = ev_destroy;
-	  ev_free_context(context);
+	  context->st = e_destroy;
+	  e_free_context(context);
 	}
 
-      if (context->st == ev_init)
+      if (context->st == e_init)
 	{
 	  // local server directly goes to streamcb.
-	  context->st = ev_connected;
+	  context->st = e_connected;
 	  evs_setcb_for_local(bev, context);
 	  bufferevent_enable(bev, EV_READ|EV_WRITE);
 	}
@@ -367,7 +365,7 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
   else
     {
       context->event_handler = (bufferevent_data_cb*)handle_streamcb;
-      bufferevent_setcb(bev, socks_initcb, NULL, eventcb, context);
+      bufferevent_setcb(bev, initcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
     }
 }
@@ -375,12 +373,12 @@ accept_func(evutil_socket_t fd, short what, void* ctx)
 void
 eventcb(struct bufferevent* bev, short what, void* ctx)
 {
-  struct ev_context_s* context = ctx;
+  struct e_context_s* context = ctx;
   struct bufferevent* partner;
 
   partner = context->reversed ? context->bev : context->partner;
 
-  event_logger(what, context);
+  event_log(what, context);
 
   if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT))
     {
@@ -392,7 +390,7 @@ eventcb(struct bufferevent* bev, short what, void* ctx)
 	  if (evbuffer_get_length(bufferevent_get_output(partner)))
 	    {
 	      log_d(DEBUG, "set to close_on_finished_writecb");
-	      context->st = ev_destroy;
+	      context->st = e_destroy;
 	      bufferevent_setcb(partner, NULL,
 				close_on_finished_writecb, eventcb, context);
 	      bufferevent_disable(partner, EV_READ);
@@ -403,19 +401,19 @@ eventcb(struct bufferevent* bev, short what, void* ctx)
 	       * side; close it! */
 	      log_d(DEBUG, "nothing to write and let partner go");
 	      bufferevent_free(partner);
-	      context->st = ev_destroy;
+	      context->st = e_destroy;
 	    }
 	}
 
-      ev_free_context(context);
+      e_free_context(context);
     }
 }
 
 static void
-socks_initcb(struct bufferevent *bev, void *ctx)
+initcb(struct bufferevent *bev, void *ctx)
 {
   struct evbuffer* src = bufferevent_get_input(bev);
-  struct ev_context_s* context = ctx;
+  struct e_context_s* context = ctx;
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
@@ -425,25 +423,25 @@ socks_initcb(struct bufferevent *bev, void *ctx)
   // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
-  ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+  e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
-  log_i("socks_initcb(): getting client and have %ld bytes", buf_size);
+  log_i("initcb(): getting client and have %ld bytes", buf_size);
 
   if (dec_buf[0] == SOCKS_VERSION)
     {
       // enc
       u8 p[2] = {SOCKS_VERSION, SUCCEEDED};
-      outl = ev_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
+      outl = e_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
       bufferevent_write(bev, enc_buf, outl);
-      context->st = ev_init;
-      bufferevent_setcb(bev, parse_header_cb, NULL, eventcb, context);
+      context->st = e_init;
+      bufferevent_setcb(bev, parse_headercb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
     }
   else
     {
-      log_i("socks_initcb(): wrong version=%d", dec_buf[0]);
-      context->st = ev_destroy;
-      ev_free_context(context);
+      log_i("initcb(): wrong version=%d", dec_buf[0]);
+      context->st = e_destroy;
+      e_free_context(context);
     }
 
 }
@@ -455,11 +453,11 @@ enum {
 } socks_cmd_e;
 
 static void
-parse_header_cb(struct bufferevent* bev, void* ctx)
+parse_headercb(struct bufferevent* bev, void* ctx)
 {
   struct sockaddr_in sin;
   struct evbuffer* src = bufferevent_get_input(bev);
-  struct ev_context_s* context = ctx;
+  struct e_context_s* context = ctx;
   struct bufferevent* partner = context->partner;
   lru_node_t* cached;
   int res;
@@ -483,33 +481,33 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+  e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
-  if (context->st == ev_init && dec_buf[0] == SOCKS_VERSION)
+  if (context->st == e_init && dec_buf[0] == SOCKS_VERSION)
     {
       switch (dec_buf[1]) {
       case connect_cmd:
       case bind_cmd:
 	break;
       case udpassoc_cmd:
-	log_warn("parse_header_cb(): udp associate is not supported");
-	context->st = ev_destroy;
+	log_warn("parse_headercb(): udp associate is not supported");
+	context->st = e_destroy;
 	break;
       default:
-	log_warn("parse_header_cb(): unkonw command: %d", dec_buf[1]);
+	log_warn("parse_headercb(): unkonw command: %d", dec_buf[1]);
 	// enc
 	socks_reply[1] = GENERAL_FAILURE;
-	buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+	buf_len = e_encrypt(context->evp_cipher_ctx, socks_reply,
 			     sizeof(socks_reply), enc_buf);
 	bufferevent_write(bev, enc_buf, buf_len);
 	bufferevent_disable(bev, EV_WRITE);
-	context->st = ev_destroy;
+	context->st = e_destroy;
 	break;
       }
     }
 
-  if (context->st != ev_init) {
-    ev_free_context(context);
+  if (context->st != e_init) {
+    e_free_context(context);
     return;
   }
 
@@ -517,14 +515,14 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
   switch(dec_buf[3])
     {
     case IPV4:
-      log_i("parse_header_cb(): IPv4, connect immediate");
+      log_i("parse_headercb(): IPv4, connect immediate");
       memcpy(buf4, dec_buf + 4, sizeof(buf4));
       evutil_snprintf(tmpl4, sizeof(tmpl4), fmt4, buf4[0], buf4[1], buf4[2], buf4[3]);
       memset(&sin, 0, sizeof(sin));
       res = evutil_inet_pton(AF_INET, (char*)tmpl4, &sin.sin_addr);
       if (res <= 0)
 	{
-	  log_e("parse_header_cb(): inet_pton() failed to resolve addr");
+	  log_e("parse_headercb(): inet_pton() failed to resolve addr");
 	  socks_reply[1] = HOST_UNREACHABLE;
 	  bufferevent_write(bev, socks_reply, 10);
 	  break;
@@ -540,22 +538,22 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
       if (bufferevent_socket_connect(partner, (struct sockaddr*)&sin,
 				     sizeof(struct sockaddr_in)) != 0)
 	{
-	  log_e("parse_header_cb(): connect() failed to connect");
+	  log_e("parse_headercb(): connect() failed to connect");
 	  socks_reply[1] = CONNECTION_REFUSED;
-	  buf_len = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+	  buf_len = e_encrypt(context->evp_cipher_ctx, socks_reply,
 			       sizeof(socks_reply), enc_buf);
 	  bufferevent_write(bev, enc_buf, buf_len);
-	  context->st = ev_destroy;
+	  context->st = e_destroy;
 	}
       else
-	context->st = ev_connected;
+	context->st = e_connected;
       break;
     case IPV6:
-      log_e("parse_header_cb(): IPv6 is not supported yet");
+      log_e("parse_headercb(): IPv6 is not supported yet");
       socks_reply[1] = ADDRESS_TYPE_NOT_SUPPORTED;
       // enc
       bufferevent_write(bev, socks_reply, 10);
-      context->st = ev_destroy;
+      context->st = e_destroy;
       break;
     case DOMAINN:
       dlen = (u8)dec_buf[4];
@@ -569,15 +567,15 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
       memset(domain, 0, dlen);
       memcpy(domain, dec_buf + 5, dlen);
 
-      ev_copy(context->domain, (char*)&domain, dlen);
+      e_copy(context->domain, (char*)&domain, dlen);
 
       context->port = htons(port);
-      context->st = ev_dns_wip;
+      context->st = e_dns_wip;
 
       cached = lru_get_node(&node, context->domain, (lru_cmp_func*)strcmp);
       if (cached)
 	{
-	  log_d(DEBUG, "parse_header_cb(): cached: \"%s\"", context->domain);
+	  log_d(DEBUG, "parse_headercb(): cached: \"%s\"", context->domain);
 
 	  socks_addr_t* addrinfo = (socks_addr_t*)cached->payload_ptr;
 
@@ -591,9 +589,9 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
 
 	    if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&ssin,
 					   sizeof(struct sockaddr_in)) == 0) {
-	      log_i("parse_header_cb(): got connected to %s index=%d",
+	      log_i("parse_headercb(): got connected to %s index=%d",
 		    context->domain, try);
-	      context->st = ev_connected;
+	      context->st = e_connected;
 	      break;
 	    }
 	  }
@@ -604,25 +602,25 @@ parse_header_cb(struct bufferevent* bev, void* ctx)
       break;
     default:
       log_warn("strange command=%d", buf[3]);
-      context->st = ev_destroy;
+      context->st = e_destroy;
     }
 
-  if (context->st == ev_connected)
+  if (context->st == e_connected)
     {
-      int outl = ev_encrypt(context->evp_cipher_ctx, socks_reply,
+      int outl = e_encrypt(context->evp_cipher_ctx, socks_reply,
 			    sizeof(socks_reply), enc_buf);
       bufferevent_write(bev, enc_buf, outl);
       bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
       bufferevent_enable(bev, EV_READ|EV_WRITE);
     }
-  if (context->st == ev_destroy)
-    ev_free_context(context);
+  if (context->st == e_destroy)
+    e_free_context(context);
 }
 
 static void
-unchoke_writecb(struct bufferevent* bev, void* ctx)
+close_writecb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s* context = ctx;
+  struct e_context_s* context = ctx;
   struct bufferevent* partner = context->partner;
 
   /* We were choking the other side until we drained our outbuf a bit.
@@ -637,30 +635,30 @@ unchoke_writecb(struct bufferevent* bev, void* ctx)
 static void
 next_readcb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s *context = ctx;
-  struct bufferevent *partner = context->partner;
-  struct evbuffer *src = bufferevent_get_input(bev);
+  struct e_context_s* context = ctx;
+  struct bufferevent* partner = context->partner;
+  struct evbuffer* src = bufferevent_get_input(bev);
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
 
-  if (context->st == ev_connected && buf_size)
+  if (context->st == e_connected && buf_size)
     {
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
 
       // dec
-      int outl = ev_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+      int outl = e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
 
       if (bufferevent_write(partner, dec_buf, outl) < 0)
 	{
 	  log_e("next_readcb(): bufferevent_write");
-	  context->st = ev_destroy;
+	  context->st = e_destroy;
 	}
       else
 	{
 	  context->reversed = true;
-	  context->st = ev_connected;
+	  context->st = e_connected;
 	  bufferevent_setcb(partner, handle_streamcb, NULL, eventcb, context);
 	  bufferevent_enable(partner, EV_WRITE|EV_READ);
 	}
@@ -670,7 +668,7 @@ next_readcb(struct bufferevent* bev, void* ctx)
 void
 handle_streamcb(struct bufferevent* bev, void* ctx)
 {
-  struct ev_context_s* context = ctx;
+  struct e_context_s* context = ctx;
   struct bufferevent* partner = context->bev;
   struct evbuffer* src = bufferevent_get_input(bev);
   struct evbuffer* dst;
@@ -685,17 +683,17 @@ handle_streamcb(struct bufferevent* bev, void* ctx)
       return;
     }
 
-  if (context->st == ev_connected && buf_size && context->partner)
+  if (context->st == e_connected && buf_size && context->partner)
     {
       // enc
       evbuffer_copyout(src, buf, buf_size);
       evbuffer_drain(src, buf_size);
-      outl = ev_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
+      outl = e_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
 
       if (bufferevent_write(partner, enc_buf, outl) != 0)
 	{
 	  log_e("handle_streamcb(): failed to write");
-	  context->st = ev_destroy;
+	  context->st = e_destroy;
 	}
       else
 	{
@@ -709,7 +707,7 @@ handle_streamcb(struct bufferevent* bev, void* ctx)
 	    {
 	      log_d(DEBUG, "handle_streamcb(): setting watermark bufsize=%ld",
 		    evbuffer_get_length(dst));
-	      bufferevent_setcb(partner, handle_streamcb, unchoke_writecb, eventcb,
+	      bufferevent_setcb(partner, handle_streamcb, close_writecb, eventcb,
 				context);
 	      bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2, MAX_OUTPUT);
 	      bufferevent_disable(bev, EV_READ);
@@ -719,7 +717,7 @@ handle_streamcb(struct bufferevent* bev, void* ctx)
 }
 
 void
-resolve(struct ev_context_s* context)
+resolve(struct e_context_s* context)
 {
   struct evutil_addrinfo hints;
 
@@ -732,14 +730,14 @@ resolve(struct ev_context_s* context)
   hints.ai_flags = EVUTIL_AI_CANONNAME;
 
   if (!evdns_getaddrinfo(dns_base, context->domain, NULL, &hints, resolvecb, context))
-    context->st = ev_destroy;
+    context->st = e_destroy;
 }
 
 void
 resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
 {
   struct sockaddr_in* sin_p;
-  struct ev_context_s* context = ptr;
+  struct e_context_s* context = ptr;
   struct evutil_addrinfo* ai_p;
   socks_addr_t* socks_addr;
   int i;
@@ -751,11 +749,11 @@ resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
   if (errcode != 0 || ai == NULL)
     {
       log_e("resolve(): %s:%s", context->domain, evutil_gai_strerror(errcode));
-      context->st = ev_destroy;
+      context->st = e_destroy;
       return;
     }
 
-  if (context->st == ev_dns_wip)
+  if (context->st == e_dns_wip)
     {
 
       for (i = 0, ai_p = ai; ai_p != NULL; ai_p = ai_p->ai_next) {
@@ -817,8 +815,8 @@ resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
 
 	if (bufferevent_socket_connect(context->partner, (struct sockaddr*)&sin,
 				       sizeof(struct sockaddr_in)) == 0) {
-	  log_i("resolve(): changing status to ev_dns_ok");
-	  context->st = ev_dns_ok;
+	  log_i("resolve(): changing status to e_dns_ok");
+	  context->st = e_dns_ok;
 	  break;
 	}
       }
@@ -828,13 +826,13 @@ resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
 			context->socks_addr, sizeof(context->socks_addr));
     }
 
-  if (context->st == ev_dns_ok)
+  if (context->st == e_dns_ok)
     {
-      context->st = ev_connected;
+      context->st = e_connected;
 
       if (context->bev != NULL)
 	{
-	  int outl = ev_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
+	  int outl = e_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
 	  bufferevent_write(context->bev, enc_buf, outl);
 	  bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
 	  bufferevent_enable(context->bev, EV_READ|EV_WRITE);
@@ -842,7 +840,7 @@ resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
     }
   else
     {
-      context->st = ev_destroy;
+      context->st = e_destroy;
       log_i("resolve(): can\'nt establish connection to %s", context->domain);
     }
 
@@ -852,7 +850,7 @@ resolvecb(int errcode, struct evutil_addrinfo* ai, void* ptr)
   return;
 
  failed:
-  context->st = ev_destroy;
+  context->st = e_destroy;
 
   if (ai)
     evutil_freeaddrinfo(ai);
@@ -866,18 +864,18 @@ close_on_finished_writecb(struct bufferevent* bev, void* ctx)
   if (evbuffer_get_length(evb) == 0)
     {
       log_d(DEBUG, "close_on_finished_writecb");
-      ev_free_context(ctx);
+      e_free_context(ctx);
     }
 }
 
 static void
-pass_through_func(evutil_socket_t sig_flag, short what, void* ctx)
+sigpipecb(evutil_socket_t sig_flag, short what, void* ctx)
 {
   log_warn("connection reset by peer");
 }
 
 static void
-signal_func(evutil_socket_t sig_flag, short what, void* ctx)
+signalcb(evutil_socket_t sig_flag, short what, void* ctx)
 {
   struct event_base *base = ctx;
 #define SIGNAL_DELAY 2
@@ -921,8 +919,7 @@ clean_dns_cache_func(evutil_socket_t sig_flag, short what, void* ctx)
 
 static void
 libevent_dns_logfn(int is_warn, const char* msg) {
-  if (DEBUG)
-    is_warn ? log_warn(msg) : log_i(msg);
+  is_warn ? log_warn("%s", msg) : log_i("%s", msg);
 }
 
 static void
@@ -973,28 +970,28 @@ print_address(struct sockaddr* sa, int type, const char* ctx)
 }
 
 static void
-event_logger(short what, struct ev_context_s* ctx)
+event_log(short what, struct e_context_s* ctx)
 {
   log_d(DEBUG, "reversed=%s status=%d domain=%s event=%s %s %s %s %s %s",
 	ctx->reversed ? "true" : "false",
 	ctx->st,
 	ctx->domain == NULL ? "raw addr" : ctx->domain,
-	(what & BEV_EVENT_READING  ) ? "ev_reading": "",
-	(what & BEV_EVENT_WRITING  ) ? "ev_writing": "",
-	(what & BEV_EVENT_EOF      ) ? "ev_eof": "",
-	(what & BEV_EVENT_ERROR    ) ? "ev_error": "",
-	(what & BEV_EVENT_TIMEOUT  ) ? "ev_timeout": "",
-	(what & BEV_EVENT_CONNECTED) ? "ev_connected": "");
+	(what & BEV_EVENT_READING  ) ? "e_reading": "",
+	(what & BEV_EVENT_WRITING  ) ? "e_writing": "",
+	(what & BEV_EVENT_EOF      ) ? "e_eof": "",
+	(what & BEV_EVENT_ERROR    ) ? "e_error": "",
+	(what & BEV_EVENT_TIMEOUT  ) ? "e_timeout": "",
+	(what & BEV_EVENT_CONNECTED) ? "e_connected": "");
 }
 
 int
-ev_encrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
+e_encrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
 {
   return openssl_encrypt(ctx, out, in, ilen);
 }
 
 int
-ev_decrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
+e_decrypt(EVP_CIPHER_CTX* ctx, u8* in, int ilen, u8* out)
 {
   return openssl_decrypt(ctx, out, in, ilen);
 }

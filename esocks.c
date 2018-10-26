@@ -4,18 +4,17 @@
  * Use of this source code is governed by a
  * license that can be found in the LICENSE file.
  *
- * Simple proxy server with Libevent & OpenSSL
- *
  */
 
 #include <sys/wait.h>
 #include <signal.h>
-#include "evs-internal.h"
+
+#include "def.h"
 #include "crypto.h"
-#include "evs_log.h"
-#include "evs_server.h"
-#include "evs_version.h"
-#include "evs_helper.h"
+#include "log.h"
+#include "server.h"
+#include "version.h"
+#include "helper.h"
 
 struct settings settings;
 
@@ -113,14 +112,14 @@ ev_do_fork(int workers)
    if ((pid = fork()) == 0) {
      // child process
      log_i("fork(): child pid=%ld", (long)getpid());
-     run_srv();
+     e_start_server();
      exit(0);
    }
    else
      pids[j] = pid;
  }
 
- run_srv();
+ e_start_server();
  log_i("event_loopexit(): parent's loop just exited.");
 
   for (j = 0; j < workers_; j++) {
@@ -266,7 +265,7 @@ main(int argc, char** argv)
   }
 
   if (load_config)
-    if (ev_parse_conf_file(&settings, settings.config_file) != 0)
+    if (e_parse_conf_file(&settings, settings.config_file) != 0)
       log_ex(1, "cannot find config file: %s", settings.config_file);
 
   settings.plen = strlen((char*)settings.passphrase);
@@ -301,7 +300,7 @@ main(int argc, char** argv)
   if (settings.workers)
     ev_do_fork(settings.workers);
   else
-    (void)run_srv();
+    (void)e_start_server();
 
   remove_pid(settings.pid_file);
   exit(0);

@@ -15,7 +15,7 @@ version=0.0.0
 if [ ! -z "$(git describe)" ]; then
 	version="$(git describe)"
 fi
-echo "#define ESOCKS_VERSION \"$version\"" > evs_version.h
+echo "#define ESOCKS_VERSION \"$version\"" > version.h
 
 echo "+automake"
 $AUTOMAKE --foreign --add-missing || exit 1

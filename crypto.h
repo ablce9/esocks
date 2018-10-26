@@ -1,7 +1,7 @@
-#ifndef OPENSSL_CRYPTO_H
-#define OPENSSL_CRYPTO_H
+#ifndef esocks_openssl_crypto_h
+#define esocks_openssl_crypto_h
 
-#include "evs-internal.h"
+#include "def.h"
 
 #include <openssl/evp.h>
 #include <openssl/err.h>

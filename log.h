@@ -1,9 +1,5 @@
-/*
- * evs_log.h
-*/
-
-#ifndef EVS_LOG_H
-#define EVS_LOG_H
+#ifndef esocks_log_h
+#define esocks_log_h
 
 #include <stdarg.h>
 
