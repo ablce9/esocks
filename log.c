@@ -9,10 +9,10 @@
 
 #include "log.h"
 
-static void socks_log(int serverity, const char* msg);
+static void socks_log(int serverity, const char *msg);
 
 void
-log_ex(int eval, const char* fmt, ...)
+log_ex(int eval, const char *fmt, ...)
 {
   va_list ap;
 
@@ -23,7 +23,7 @@ log_ex(int eval, const char* fmt, ...)
 }
 
 void
-log_e(const char* fmt, ...)
+log_e(const char *fmt, ...)
 {
   va_list ap;
 
@@ -33,7 +33,7 @@ log_e(const char* fmt, ...)
 }
 
 void
-log_warn(const char* fmt, ...)
+log_warn(const char *fmt, ...)
 {
   va_list ap;
 
@@ -43,11 +43,11 @@ log_warn(const char* fmt, ...)
 }
 
 void
-log_d(int v, const char* fmt, ...)
+log_d(int v, const char *fmt, ...)
 {
   va_list ap;
 
-  if (v>0) {
+  if (v > 0) {
     va_start(ap, fmt);
     log_output(SOCKS_LOG_DEBUG, NULL, fmt, ap);
     va_end(ap);
@@ -55,7 +55,7 @@ log_d(int v, const char* fmt, ...)
 }
 
 void
-log_i(const char* fmt, ...)
+log_i(const char *fmt, ...)
 {
   va_list ap;
 
@@ -66,7 +66,7 @@ log_i(const char* fmt, ...)
 
 
 void
-log_output(int serverity, const char* errstr, const char* fmt, va_list ap)
+log_output(int serverity, const char *errstr, const char *fmt, va_list ap)
 {
   char buf[512];
   size_t len;
@@ -88,7 +88,7 @@ log_output(int serverity, const char* errstr, const char* fmt, va_list ap)
 }
 
 static void
-socks_log(int serverity, const char* msg)
+socks_log(int serverity, const char *msg)
 {
   time_t t;
   struct timeval now;

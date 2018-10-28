@@ -5,7 +5,7 @@
 #include "def.h"
 #include "crypto.h"
 
-int openssl_encrypt(EVP_CIPHER_CTX* ctx, u8* out, u8* in, int ilen)
+int openssl_encrypt(EVP_CIPHER_CTX *ctx, u8 *out, u8 *in, int ilen)
 {
   int len = 0;
 
@@ -19,7 +19,7 @@ int openssl_encrypt(EVP_CIPHER_CTX* ctx, u8* out, u8* in, int ilen)
   return (-1);
 }
 
-int openssl_decrypt(EVP_CIPHER_CTX* ctx, u8* out, u8* in, int ilen)
+int openssl_decrypt(EVP_CIPHER_CTX *ctx, u8 *out, u8 *in, int ilen)
 {
   int len = 0;
 

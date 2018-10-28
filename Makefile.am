@@ -32,3 +32,6 @@ maintainer-clean-local:
 	-rm configure
 	-rm config.log
 	-rm config.status
+
+style:
+	./scripts/checkpatch.pl -f --max-line-length=4000 --color=always --no-tree $(wildcard *.c) $(wildcard *.h)

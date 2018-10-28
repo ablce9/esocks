@@ -35,7 +35,7 @@
 # define u8   ev_uint8_t
 
 /* simple debug mode */
-#ifndef  DEBUG
+#ifndef DEBUG
 # define  DEBUG 0
 #endif
 
@@ -52,29 +52,31 @@
 #define SOCKS_MAX_BUFFER_SIZE 4096
 
 struct settings {
-  struct socksaddr_in* proxy;
+  struct socksaddr_in *proxy;
   int                  connection_timeout;
-  const char*          listen_addr;
+  const char *listen_addr;
   short                listen_port;
-  const char*          server_addr;
+  const char *server_addr;
   short                server_port;
   int                  workers;
   _Bool                relay_mode;
-  const char*          nameserver;
-  const char*          resolv_conf;
+  const char *nameserver;
+  const char *resolv_conf;
   int                  rate_rlimit;
   int                  rate_wlimit;
-  const char*          cipher_name;
-  const EVP_MD*        dgst;
-  const EVP_CIPHER*    cipher;
-  const u8*            iv;
-  const u8*            key;
-  u8*                  passphrase;
+  const char *cipher_name;
+
+  const EVP_MD *dgst;
+
+  const EVP_CIPHER *cipher;
+  const u8 *iv;
+  const u8 *key;
+  u8 *passphrase;
   int                  plen;
   long                 dns_cache_tval;
   _Bool                daemon_mode;
-  const char*          config_file;
-  const char*          pid_file;
+  const char *config_file;
+  const char *pid_file;
 };
 
 extern struct settings settings;

@@ -11,12 +11,12 @@
 #include "lru.h"
 
 struct socks_addr {
-  struct sockaddr* sockaddr;
+  struct sockaddr *sockaddr;
   socklen_t        socklen;
 };
 
 typedef struct {
-  struct socks_addr* addrs;
+  struct socks_addr *addrs;
   int                naddrs;
 } socks_addr_t;
 
@@ -25,13 +25,13 @@ typedef struct socks_name_s {
   u16                port;
   int                family;
   char               domain[256];
-  socks_addr_t*      addrs;
-  struct sockaddr*   sa;
+  socks_addr_t *addrs;
+  struct sockaddr *sa;
 } socks_name_t;
 
-char* e_copy(char* dst, char* src, size_t s);
-void e_parse_line(char* const start);
-int e_read_file(const char* filename, char** out, int* out_len);
-int e_parse_conf_file(struct settings* st, const char* filename);
+char *e_copy(char *dst, char *src, size_t s);
+void e_parse_line(char * const start);
+int e_read_file(const char *filename, char **out, int *out_len);
+int e_parse_conf_file(struct settings *st, const char *filename);
 
 #endif

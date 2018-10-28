@@ -8,11 +8,16 @@
 #include "./helper.h"
 #include "./crypto.h"
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(e) (sizeof(e)/sizeof(e[0]))
+#endif
+
 #define MEMCMP(a, b, s)	  \
   do { if (!memcmp(a, b, s))				\
       test_ok("matched: %s", __func__);	\
-    else test_failed("doesn't match: %s", __func__);    \
-} while(0);
+    else \
+      test_failed("doesn't match: %s", __func__);	\
+} while (0);
 
 #define CIPHER_INIT(ctx, cipher, key, iv, opt)		      \
   do { if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, opt)) \
@@ -33,8 +38,8 @@ test_setting_init(void)
     0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56
   };
 
-  settings.passphrase = (u8*)"this is my password!";
-  settings.plen = strlen((char*)settings.passphrase);
+  settings.passphrase = (u8 *)"this is my password!";
+  settings.plen = strlen((char *)settings.passphrase);
   settings.cipher_name = "aes-256-cfb";
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
   settings.dgst = EVP_md5();
@@ -43,10 +48,10 @@ test_setting_init(void)
 }
 
 static void
-announce(int ok_or_fail, const char* msg, va_list ap)
+announce(int ok_or_fail, const char *msg, va_list ap)
 {
   char buf[1024];
-  char* status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m"
+  char *status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m"
     : "\033[00;31mfailed\033[00;00m";
 
   evutil_vsnprintf(buf, sizeof(buf), msg, ap);
@@ -55,9 +60,10 @@ announce(int ok_or_fail, const char* msg, va_list ap)
 }
 
 static void
-test_ok(const char* fmt, ...)
+test_ok(const char *fmt, ...)
 {
   va_list ap;
+
   va_start(ap, fmt);
   va_end(ap);
 
@@ -65,9 +71,10 @@ test_ok(const char* fmt, ...)
 }
 
 static void
-test_failed(const char* fmt, ...)
+test_failed(const char *fmt, ...)
 {
   va_list ap;
+
   va_start(ap, fmt);
   va_end(ap);
 
@@ -78,8 +85,8 @@ test_failed(const char* fmt, ...)
 static void
 test_lru_payload(void)
 {
-  lru_node_t* node;
-  lru_node_t* current;
+  lru_node_t *node;
+  lru_node_t *current;
   struct payload_s x, y, z;
 
   node = lru_init();
@@ -90,9 +97,9 @@ test_lru_payload(void)
 
   lru_insert_left(&node, "zero", &x, sizeof(x));
 
-  assert(strcmp(lru_get_tail()->key, (const char*)"zero") == 0);
+  assert(strcmp(lru_get_tail()->key, (const char *)"zero") == 0);
 
-  current = lru_get_node(&node, "does_not_exist", (lru_cmp_func*)strcmp);
+  current = lru_get_node(&node, "does_not_exist", (lru_cmp_func *)strcmp);
   assert(current == NULL);
 
   y.key = "key1";
@@ -104,20 +111,20 @@ test_lru_payload(void)
   z.val = "val2";
   lru_insert_left(&node, "second", &z, sizeof(z));
 
-  current = lru_get_node(&node, "second", (lru_cmp_func*)strcmp);
+  current = lru_get_node(&node, "second", (lru_cmp_func *)strcmp);
   assert(current);
-  assert(strcmp(current->key, (const char*)"second") == 0);
+  assert(strcmp(current->key, (const char *)"second") == 0);
 
-  current = lru_get_node(&node, "first", (lru_cmp_func*)strcmp);
+  current = lru_get_node(&node, "first", (lru_cmp_func *)strcmp);
   assert(current);
-  assert(current->key == (const char*)"first");
-  assert(strcmp(((payload_t*)current->payload_ptr)->key, (const char*)"key1") == 0);
-  assert(strcmp(((payload_t*)current->payload_ptr)->val, (const char*)"val1") == 0);
+  assert(current->key == (const char *)"first");
+  assert(strcmp(((payload_t *)current->payload_ptr)->key, (const char *)"key1") == 0);
+  assert(strcmp(((payload_t *)current->payload_ptr)->val, (const char *)"val1") == 0);
 
-  current = lru_get_node(&node, "zero", (lru_cmp_func*)strcmp);
+  current = lru_get_node(&node, "zero", (lru_cmp_func *)strcmp);
   assert(current);
 
-  assert(strcmp(((payload_t*)current->payload_ptr)->key, (const char*)"key") == 0);
+  assert(strcmp(((payload_t *)current->payload_ptr)->key, (const char *)"key") == 0);
   assert(lru_get_tail() != NULL);
 
   lru_purge_all(&node);
@@ -127,8 +134,9 @@ test_lru_payload(void)
 void
 test_lru_validate_tail(void)
 {
-  lru_node_t* node;
+  lru_node_t *node;
   struct payload_s x;
+
   node = lru_init();
   assert(node);
 
@@ -138,9 +146,9 @@ test_lru_validate_tail(void)
   lru_insert_left(&node, "foo", &x, sizeof(x));
 
   // tail should be the first, which was inserted right before this one called.
-  assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
-  assert(strcmp((lru_get_node(&node, "foo", (lru_cmp_func*)strcmp))->key,
-		(const char*)"foo") == 0);
+  assert(strcmp((lru_get_tail())->key, (const char *)"foo") == 0);
+  assert(strcmp((lru_get_node(&node, "foo", (lru_cmp_func *)strcmp))->key,
+		(const char *)"foo") == 0);
 
   // Let's create a place where ptr->next && ptr->prev are fully loaded.
   // And retrieve a middle of the node.
@@ -148,14 +156,14 @@ test_lru_validate_tail(void)
   lru_insert_left(&node, "buz", &x, sizeof(x));
 
   // Middle of the node
-  assert(strcmp((lru_get_node(&node, "doo", (lru_cmp_func*)strcmp))->key,
-		(const char*)"doo") == 0);
+  assert(strcmp((lru_get_node(&node, "doo", (lru_cmp_func *)strcmp))->key,
+		(const char *)"doo") == 0);
   // Tail of the node
-  assert(strcmp((lru_get_tail())->key, (const char*)"foo") == 0);
+  assert(strcmp((lru_get_tail())->key, (const char *)"foo") == 0);
   // Head of the node
-  assert(strcmp(node->key, (const char*)"doo") == 0);
+  assert(strcmp(node->key, (const char *)"doo") == 0);
   // Don't forget buz :)
-  assert(strcmp(node->prev->key, (const char*)"buz") == 0);
+  assert(strcmp(node->prev->key, (const char *)"buz") == 0);
 
   lru_purge_all(&node);
   test_ok("%s", __func__);
@@ -164,8 +172,9 @@ test_lru_validate_tail(void)
 void
 test_lru_remove_node(void)
 {
-  lru_node_t* node;
+  lru_node_t *node;
   struct payload_s x;
+
   node = lru_init();
   assert(node);
 
@@ -178,7 +187,7 @@ test_lru_remove_node(void)
   // Pop key=first
   lru_remove_oldest(&node, 1);
 
-  assert(lru_get_tail()->key == (const char*)"doo");
+  assert(lru_get_tail()->key == (const char *)"doo");
 
   lru_purge_all(&node);
   test_ok("%s", __func__);
@@ -187,20 +196,20 @@ test_lru_remove_node(void)
 static void
 test_lru_timeout_handler(void)
 {
-  struct event_base* base = NULL;
-  struct lru_node_s* node = NULL;
-  struct event* handler;
+  struct event_base *base = NULL;
+  struct lru_node_s *node = NULL;
+  struct event *handler;
   struct timeval tval = {1, 0};
   struct evutil_addrinfo hints;
-  struct evutil_addrinfo* res;
-  struct evutil_addrinfo* p;
+  struct evutil_addrinfo *res;
+  struct evutil_addrinfo *p;
   struct sockaddr_in *sin;
   struct dns_cache_config config;
   socks_addr_t *sock_addr;
   int err;
   int i;
-  char* hostname = "client-event-reporter.twitch.tv";
-  char* port = "443";
+  char *hostname = "client-event-reporter.twitch.tv";
+  char *port = "443";
   short what = 0;
 
   what |= EV_TIMEOUT;
@@ -215,7 +224,7 @@ test_lru_timeout_handler(void)
   assert(node && base);
 
   handler = event_new(base, -1,
-		      EV_TIMEOUT, clean_dns_cache_func, (void*)&config);
+		      EV_TIMEOUT, clean_dns_cache_func, (void *)&config);
   event_add(handler, &tval);
 
   memset(&hints, 0, sizeof(hints));
@@ -229,7 +238,7 @@ test_lru_timeout_handler(void)
     test_failed("evutil_getaddrinfo");
 
   for (i = 0, p = res; p != NULL; p = p->ai_next) {
-      switch(p->ai_family) {
+      switch (p->ai_family) {
       case AF_INET:
       case AF_INET6:
 	break;
@@ -258,7 +267,7 @@ test_lru_timeout_handler(void)
 
     sin->sin_family = AF_INET;
 
-    sock_addr->addrs[i].sockaddr = (struct sockaddr*)sin;
+    sock_addr->addrs[i].sockaddr = (struct sockaddr *)sin;
     sock_addr->addrs[i].socklen = p->ai_addrlen;
 
     i++;
@@ -271,7 +280,7 @@ test_lru_timeout_handler(void)
   lru_insert_left(&config.cache, hostname, sock_addr, sizeof(sock_addr));
   usleep(1100000);
 
-  clean_dns_cache_func(0, what, (void*)&config);
+  clean_dns_cache_func(0, what, (void *)&config);
 
   event_base_dispatch(base);
 
@@ -291,15 +300,15 @@ logfn(int is_warn, const char *msg) {
 static void
 test_resolve_cb(void)
 {
-  struct event_base* base;
+  struct event_base *base;
   struct evutil_addrinfo hints;
-  struct evutil_addrinfo* res;
-  struct e_context_s* ctx;
-  struct bufferevent* partner;
+  struct evutil_addrinfo *res;
+  struct e_context_s *ctx;
+  struct bufferevent *partner;
   int i;
   int err;
-  char* hostname = "www.google.com";
-  char* port = "80";
+  char *hostname = "www.google.com";
+  char *port = "80";
 
   base = event_base_new();
   assert(base);
@@ -345,11 +354,11 @@ test_resolve_cb(void)
 static void
 test_event_cb(void)
 {
-  struct event_base* base;
-  struct bufferevent* bev0;
-  struct bufferevent* partner0;
-  struct bufferevent* bev1;
-  struct bufferevent* partner1;
+  struct event_base *base;
+  struct bufferevent *bev0;
+  struct bufferevent *partner0;
+  struct bufferevent *bev1;
+  struct bufferevent *partner1;
   struct e_context_s ctx0;
   struct e_context_s ctx1;
   short what = 0;
@@ -371,16 +380,16 @@ test_event_cb(void)
 
   ctx0.partner = partner0;
   ctx0.bev = bev0;
-  ctx0.event_handler = (bufferevent_data_cb*)handle_streamcb;
+  ctx0.event_handler = (bufferevent_data_cb *)handle_streamcb;
 
   ctx1.partner = partner1;
   ctx1.bev = bev1;
-  ctx1.event_handler = (bufferevent_data_cb*)handle_streamcb;
+  ctx1.event_handler = (bufferevent_data_cb *)handle_streamcb;
 
   // Checks for non-reversed bufferevent
   ctx0.reversed = false;
   memcpy(&ctx0.domain, "foooo", 5);
-  eventcb(bev0, what, (void*)&ctx0);
+  eventcb(bev0, what, (void *)&ctx0);
 
   assert(ctx0.st == 0);
   assert(ctx0.bev == NULL);
@@ -389,7 +398,7 @@ test_event_cb(void)
   // Checks for reversed bufferevent
   ctx1.reversed = true;
   memcpy(&ctx1.domain, "doooo", 5);
-  eventcb(bev1, what, (void*)&ctx1);
+  eventcb(bev1, what, (void *)&ctx1);
 
   assert(ctx1.st == 0);
   assert(ctx1.bev == NULL);
@@ -404,9 +413,9 @@ static void
 test_close_on_finished_writecb(void)
 {
   static evutil_socket_t pair[2] = {0, 1};
-  struct event_base* base;
-  struct bufferevent* bev;
-  struct bufferevent* partner;
+  struct event_base *base;
+  struct bufferevent *bev;
+  struct bufferevent *partner;
   struct e_context_s ctx;
   struct timeval tv;
   short what = 0;
@@ -433,7 +442,7 @@ test_close_on_finished_writecb(void)
 
   ctx.partner = partner;
   ctx.bev = bev;
-  ctx.event_handler = (bufferevent_data_cb*)handle_streamcb;
+  ctx.event_handler = (bufferevent_data_cb *)handle_streamcb;
 
   bufferevent_setcb(bev, NULL, NULL, eventcb, &ctx);
   bufferevent_enable(partner, EV_WRITE|EV_READ);
@@ -457,8 +466,8 @@ test_close_on_finished_writecb(void)
 static
 void test_crypto(void)
 {
-  EVP_CIPHER_CTX* c1;
-  EVP_CIPHER_CTX* c2;
+  EVP_CIPHER_CTX *c1;
+  EVP_CIPHER_CTX *c2;
   u8 out[SOCKS_MAX_BUFFER_SIZE];
   u8 in[32] = {
     0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xf,
@@ -474,6 +483,7 @@ void test_crypto(void)
 
   outl = openssl_encrypt(c1, out, in, sizeof(in));
   u8 dec_buf[outl];
+
   outl = openssl_decrypt(c2, dec_buf, out, outl);
 
   MEMCMP(in, dec_buf, outl);
@@ -493,8 +503,9 @@ void test_wrapped_crypto(void)
   for (i = 0; i < 1000; i++) {
     // Create random bytes.
     u8 in[buf_size];
-    EVP_CIPHER_CTX* c1;
-    EVP_CIPHER_CTX* c2;
+    EVP_CIPHER_CTX *c1;
+    EVP_CIPHER_CTX *c2;
+
     for (index = 0; index < buf_size; index++)
       in[index] = rand();
 
@@ -506,7 +517,8 @@ void test_wrapped_crypto(void)
 
     outl = e_encrypt(c1, in, sizeof(in), enc_buf);
     u8 dec_buf[outl];
-    outl = e_decrypt(c2, enc_buf,outl, dec_buf);
+
+    outl = e_decrypt(c2, enc_buf, outl, dec_buf);
 
     assert(memcmp(in, dec_buf, outl) == 0);
     EVP_CIPHER_CTX_free(c1);
@@ -518,8 +530,8 @@ void test_wrapped_crypto(void)
 static void
 test_stream_encryption(void)
 {
-  EVP_CIPHER_CTX* c1;
-  EVP_CIPHER_CTX* c2;
+  EVP_CIPHER_CTX *c1;
+  EVP_CIPHER_CTX *c2;
   int i;
   static const int buf_size = 2049;
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
@@ -539,12 +551,13 @@ test_stream_encryption(void)
   i = 0;
   do {
     int dec_total = 0;
+
     i += 517;
     memcpy(in, buf, i);
     e_encrypt(c1, in, i, enc_buf);
     dec_total += e_decrypt(c2, enc_buf, i, dec_buf);
     assert(memcmp(in, dec_buf, dec_total) == 0);
-  } while(i < buf_size);
+  } while (i < buf_size);
 
   test_ok("%s", __func__);
   EVP_CIPHER_CTX_free(c1);
@@ -564,11 +577,11 @@ test_can_read_conf_file()
   assert(strcmp(st.cipher_name, "aes-256-cfb") == 0);
   assert(st.dns_cache_tval == 6500);
   assert(!st.daemon_mode);
-  assert(strcmp((const char*)st.passphrase, "thisIsMyPassword") == 0);
-  assert(strcmp((const char*)st.listen_addr, "127.0.0.1") == 0);
+  assert(strcmp((const char *)st.passphrase, "thisIsMyPassword") == 0);
+  assert(strcmp((const char *)st.listen_addr, "127.0.0.1") == 0);
   assert(st.listen_port == 3080);
-  assert(strcmp((const char*)st.resolv_conf, "/etc/resolv.conf.dev") == 0);
-  assert(strcmp((const char*)st.server_addr, "1.2.3.4") == 0);
+  assert(strcmp((const char *)st.resolv_conf, "/etc/resolv.conf.dev") == 0);
+  assert(strcmp((const char *)st.server_addr, "1.2.3.4") == 0);
   assert(st.server_port == 3081);
   assert(st.workers == 2);
   test_ok("%s", __func__);
@@ -577,14 +590,14 @@ test_can_read_conf_file()
 typedef void(*test_function)(void);
 
 struct testcase {
-  const char*   description;
+  const char *description;
   test_function function;
 };
 
 struct testcase testcases[] = {
   {"test_lru_lrupayload", test_lru_payload},
   {"test_lru_validate_tail", test_lru_validate_tail},
-  {"test_lru_remove_node",test_lru_remove_node},
+  {"test_lru_remove_node", test_lru_remove_node},
   {"test_event_cb", test_event_cb},
   {"test_close_on_finished_writecb", test_close_on_finished_writecb},
   {"test_resolve_cb", test_resolve_cb},
@@ -596,15 +609,16 @@ struct testcase testcases[] = {
 };
 
 int
-main(int argc, char** argv)
+main(int argc, char **argv)
 {
   int total_tests, current;
+
   crypto_init();
   test_setting_init();
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
-		 settings.passphrase, settings.plen, 1, (u8*)settings.key,
-		 (u8*)settings.iv);
-  total_tests = (int)sizeof(testcases)/sizeof(testcases[0]);
+		 settings.passphrase, settings.plen, 1, (u8 *)settings.key,
+		 (u8 *)settings.iv);
+  total_tests = (int)ARRAY_SIZE(testcases);
 
   for (current = 0; current < total_tests; current++)
       testcases[current].function();

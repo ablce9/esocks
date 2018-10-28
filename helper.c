@@ -10,36 +10,34 @@
 #include "helper.h"
 #include "log.h"
 
-static void e_parse_conf_line(struct settings* st, char* const start);
+static void e_parse_conf_line(struct settings *st, char * const start);
 
 char*
-e_copy(char* dst, char* src, size_t s)
+e_copy(char *dst, char *src, size_t s)
 {
 
-  while(s--)
-    {
-
-      *dst = *src;
-
-      if (*dst == '\0') return dst;
-
-      dst ++; src ++;
-
-    }
+  while (s--) {
+    *dst = *src;
+    if (*dst == '\0')
+      return dst;
+    dst++; src++;
+  }
 
   *dst = '\0';
 
   return dst;
 }
 
-void e_parse_line(char* const start)
+void e_parse_line(char * const start)
 {
   char *strtok_state;
-  static const char* delims = " \t";
+  static const char *delims = " \t";
 #define NEXT_TOKEN strtok_r(NULL, delims, &strtok_state)
 
   char *const first_token = strtok_r(start, delims, &strtok_state);
-  if (!first_token) return;
+
+  if (!first_token)
+    return;
 }
 
 /*
@@ -49,7 +47,7 @@ void e_parse_line(char* const start)
   Taken from libevent/evutil.c evutil_read_file_
 */
 int
-e_read_file(const char* filename, char** out, int* out_len)
+e_read_file(const char *filename, char **out, int *out_len)
 {
   struct stat st;
   int fd;
@@ -84,7 +82,7 @@ e_read_file(const char* filename, char** out, int* out_len)
   }
 
   read_so_far = 0;
-#define N_TO_READ(x) ((x) > INT_MAX) ? INT_MAX : ((int)(x))
+#define N_TO_READ(x) (((x) > INT_MAX) ? INT_MAX : ((int)(x)))
   while ((r = read(fd, mem+read_so_far, N_TO_READ(st.st_size - read_so_far))) > 0) {
     read_so_far += r;
     if (read_so_far >= (int)st.st_size)
@@ -105,24 +103,27 @@ e_read_file(const char* filename, char** out, int* out_len)
 }
 
 int
-e_parse_conf_file(struct settings* st, const char* filename)
+e_parse_conf_file(struct settings *st, const char *filename)
 {
   char *out;
   char *start;
   int err;
   int out_len;
 
-  if ((err = e_read_file(filename, &out, &out_len)) < 0) {
+  err = e_read_file(filename, &out, &out_len);
+
+  if (err < 0) {
     if (err == -1)
-      log_e("e_parse_config_file(): file doesn't exist");
+      log_e("%s: file doesn't exist", __func__);
     if (err == -2)
-      log_e("e_parse_config_file(): fatal error");
+      log_e("%s: fatal error", __func__);
     return 1;
   }
 
   start = out;
   for ( ;; ) {
-    char* const newline = strchr(start, '\n');
+    char * const newline = strchr(start, '\n');
+
     if (!newline) {
       e_parse_conf_line(st, start);
       break;
@@ -136,18 +137,19 @@ e_parse_conf_file(struct settings* st, const char* filename)
 }
 
 static void
-e_parse_conf_line(struct settings* st, char* const start)
+e_parse_conf_line(struct settings *st, char * const start)
 {
-  char* first_token;
-  char* token_val;
-  char* const delims = " \t";
+  char *first_token;
+  char *token_val;
+  char * const delims = " \t";
   int zero_or_one;
 
   first_token = strtok_r(start, delims, &token_val);
-  if (!first_token) return;
+  if (!first_token)
+    return;
 
   if (!strcmp("CipherName", first_token))
-    st->cipher_name = (char*)token_val;
+    st->cipher_name = (char *)token_val;
 
   if (!strcmp("ConnectionTimeout", first_token))
     st->connection_timeout = atoi(token_val);
@@ -162,19 +164,19 @@ e_parse_conf_line(struct settings* st, char* const start)
   }
 
   if (!strcmp("Password", first_token))
-    st->passphrase = (u8*)token_val;
+    st->passphrase = (u8 *)token_val;
 
   if (!strcmp("ListenAddress", first_token))
-    st->listen_addr = (const char*)token_val;
+    st->listen_addr = (const char *)token_val;
 
   if (!strcmp("ListenPort", first_token))
     st->listen_port = atoi(token_val);
 
   if (!strcmp("ResolvConf", first_token))
-    st->resolv_conf = (const char*)token_val;
+    st->resolv_conf = (const char *)token_val;
 
   if (!strcmp("ServerAddress", first_token)) {
-    st->server_addr = (const char*)token_val;
+    st->server_addr = (const char *)token_val;
     st->relay_mode = true;
   }
 

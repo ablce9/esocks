@@ -22,10 +22,11 @@ static void settings_init(void);
 static void usage(void);
 static void fatal_error_cb(int err);
 static void ev_do_fork(int workers);
-static void save_pid(const char* pid_file);
-static void remove_pid(const char* pid_file);
+static void save_pid(const char *pid_file);
+static void remove_pid(const char *pid_file);
 
-static void fatal_error_cb(int err) {
+static void fatal_error_cb(int err)
+{
   log_e("fata_error_cb got=%d\n", err);
 }
 
@@ -37,7 +38,7 @@ settings_init(void)
   settings.listen_port = DEFAULT_SERVER_PORT;
   settings.server_addr = "0.0.0.0";
   settings.server_port = DEFAULT_SERVER_PORT;
-  settings.passphrase = (u8*)"too lame to set password";
+  settings.passphrase = (u8 *)"too lame to set password";
   // Timeout for connections made between clients and a server.
 #define DEFAULT_CONNECTION_TIMEOUT 300
   settings.connection_timeout = DEFAULT_CONNECTION_TIMEOUT;
@@ -75,7 +76,8 @@ settings_init(void)
 }
 
 static
-void usage() {
+void usage(void)
+{
   printf("Esocks " ESOCKS_VERSION ", a socks5 proxy server\n"
 	 "Usage: esocks [OPTIONS...]\n"
 	 "\n"
@@ -102,28 +104,29 @@ void usage() {
 static void
 ev_do_fork(int workers)
 {
- int j;
- pid_t pid;
- int workers_ = workers-1;
- pid_t pids[workers_];
+  int j;
+  pid_t pid;
+  int workers_ = workers-1;
+  pid_t pids[workers_];
 
- log_i("fork(): parent pid=%ld", (long)getpid());
- for (j = 0; j < workers_; j++) {
-   if ((pid = fork()) == 0) {
-     // child process
-     log_i("fork(): child pid=%ld", (long)getpid());
-     e_start_server();
-     exit(0);
-   }
-   else
-     pids[j] = pid;
- }
+  log_i("fork(): parent pid=%ld", (long)getpid());
+  for (j = 0; j < workers_; j++) {
+    pid = fork();
+    if (pid == 0) {
+      // child process
+      log_i("fork(): child pid=%ld", (long)getpid());
+      e_start_server();
+      exit(0);
+    } else
+      pids[j] = pid;
+  }
 
- e_start_server();
- log_i("event_loopexit(): parent's loop just exited.");
+  e_start_server();
+  log_i("event_loopexit(): parent's loop just exited.");
 
   for (j = 0; j < workers_; j++) {
     int status;
+
     kill(pids[j], SIGTERM);
     if ((waitpid(pids[j], &status, 0)) == -1)
       log_e("waitpid()");
@@ -136,31 +139,35 @@ ev_do_fork(int workers)
 }
 
 static void
-save_pid(const char* pid_file)
+save_pid(const char *pid_file)
 {
-  FILE* fp;
+  FILE *fp;
 
-  if ((fp = fopen(pid_file, "r")) != NULL)
-    {
-      char buf[1024];
-      if (fgets(buf, sizeof(buf), fp) != NULL) {
-	char* endptr;
-	pid_t pid;
-	if ((pid = strtoul(buf, &endptr, 10)) && kill((pid_t)pid, SIGTERM) == 0)
-	  log_warn("The pid file contained pid: %u", pid);
-      }
-      fclose(fp);
+  fp = fopen(pid_file, "r");
+  if (fp != NULL) {
+    char buf[1024];
+
+    if (fgets(buf, sizeof(buf), fp) != NULL) {
+      char *endptr;
+      pid_t pid;
+
+      pid = strtoul(buf, &endptr, 10);
+      if (pid && kill((pid_t)pid, SIGTERM) == 0)
+	log_warn("The pid file contained pid: %u", pid);
     }
-  if ((fp = fopen(pid_file, "w")) != NULL) {
-    fprintf(fp, "%ld\n", (long)getpid());
     fclose(fp);
   }
-  else
+
+  fp = fopen(pid_file, "w");
+  if (fp != NULL) {
+    fprintf(fp, "%ld\n", (long)getpid());
+    fclose(fp);
+  } else
     log_ex(1, "fopen(%ld, w)", (long)getpid());
 }
 
 static void
-remove_pid(const char* pid_file)
+remove_pid(const char *pid_file)
 {
   if (pid_file == NULL)
     return;
@@ -170,7 +177,7 @@ remove_pid(const char* pid_file)
 }
 
 int
-main(int argc, char** argv)
+main(int argc, char **argv)
 {
   int port;
   int cc = 0;
@@ -181,7 +188,7 @@ main(int argc, char** argv)
   crypto_init();
   settings_init();
 
-  char* shortopts =
+  char *shortopts =
     "C:" /* TODO: support config file */
     "c:" /* cipher name */
     "d:" /* dns cache timeout */
@@ -204,7 +211,7 @@ main(int argc, char** argv)
   while (cc != -1) {
     cc = getopt(argc, argv, shortopts);
 
-    switch(cc) {
+    switch (cc) {
     case 'c':
       settings.cipher_name = optarg;
       break;
@@ -226,7 +233,7 @@ main(int argc, char** argv)
       settings.relay_mode = true;
       break;
     case 'k':
-      settings.passphrase = (u8*)optarg;
+      settings.passphrase = (u8 *)optarg;
       break;
     case 'n':
       settings.workers = atoi(optarg);
@@ -268,7 +275,7 @@ main(int argc, char** argv)
     if (e_parse_conf_file(&settings, settings.config_file) != 0)
       log_ex(1, "cannot find config file: %s", settings.config_file);
 
-  settings.plen = strlen((char*)settings.passphrase);
+  settings.plen = strlen((char *)settings.passphrase);
 
   settings.cipher = EVP_get_cipherbyname(settings.cipher_name);
   if (settings.cipher == NULL)
@@ -277,8 +284,8 @@ main(int argc, char** argv)
   settings.dgst = EVP_md5();
 
   EVP_BytesToKey(settings.cipher, settings.dgst, NULL,
-		 settings.passphrase, settings.plen, 1, (u8*)settings.key,
-		 (u8*)settings.iv);
+		 settings.passphrase, settings.plen, 1, (u8 *)settings.key,
+		 (u8 *)settings.iv);
 
   DEBUG ? NULL : event_set_fatal_callback(fatal_error_cb);
 
@@ -292,7 +299,7 @@ main(int argc, char** argv)
 	  settings.listen_addr, settings.listen_port, settings.server_addr,
 	  settings.server_port);
   else
-      log_i("listening on %s:%d", settings.listen_addr, settings.listen_port);
+    log_i("listening on %s:%d", settings.listen_addr, settings.listen_port);
 
   log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
 	settings.connection_timeout, settings.cipher_name);
