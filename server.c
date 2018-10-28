@@ -427,7 +427,8 @@ initcb(struct bufferevent *bev, void *ctx)
 
   log_i("initcb(): getting client and have %ld bytes", buf_size);
 
-  if (dec_buf[0] == SOCKS_VERSION)
+  // TODO: check NMETHODS
+  if (dec_buf[0] == SOCKS_VERSION && dec_buf[2] == NO_AUTHENTICATION)
     {
       // enc
       u8 p[2] = {SOCKS_VERSION, SUCCEEDED};
@@ -439,7 +440,7 @@ initcb(struct bufferevent *bev, void *ctx)
     }
   else
     {
-      log_i("initcb(): wrong version=%d", dec_buf[0]);
+      log_e("initcb(): wrong version=%d", dec_buf[0]);
       context->st = e_destroy;
       e_free_context(context);
     }

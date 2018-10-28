@@ -133,7 +133,7 @@ class Socks5Client extends EventEmitter {
         this._socket.once('connect', () => {
 	    this.state |= (connected | writing | reading);
 	    // No support for socks authentications.
-	    buf = new Buffer([0x05, 0x01, 0x00]);
+	    buf = new Buffer([0x05, 0x00, 0x00]);
 	    this._socket.write(buf);
         });
         this._socket.once('data', (data) => {

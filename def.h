@@ -46,7 +46,8 @@
 #endif
 
 /* socks version  */
-#define SOCKS_VERSION 5
+#define SOCKS_VERSION      0x05
+#define NO_AUTHENTICATION  0x00
 
 #define SOCKS_MAX_BUFFER_SIZE 4096
 
