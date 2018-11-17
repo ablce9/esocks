@@ -12,7 +12,7 @@ RUN set -x \
     && apt-get autoclean -y \
     && wget https://github.com/libevent/libevent/releases/download/release-$LIBEVENT_VERSION-stable/libevent-$LIBEVENT_VERSION-stable.tar.gz \
     && tar xzvf libevent-$LIBEVENT_VERSION-stable.tar.gz && cd libevent-$LIBEVENT_VERSION-stable \
-    && ./configure && make && make install \
+    && ./configure --prefix=/usr/local --enable-verbose-debug && make -j4 && make install \
     && cd .. && rm -rf libevent-$LIBEVENT_VERSION-stable.tar.gz libevent-$LIBEVENT_VERSION-stable
 
 RUN mkdir -p /opt/esocks

@@ -1,0 +1,24 @@
+image: debian/stretch
+sources:
+  - https://github.com/ablce9/esocks
+tasks:
+  - setup: |
+      sudo apt-get update -y
+      sudo apt-get upgrade -y
+      sudo apt-get install -y git-core build-essential wget
+      sudo apt-get install -y --no-install-recommends make automake autoconf libssl1.1 libssl-dev
+      sudo apt-get autoclean -y
+      wget https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
+      tar xzvf libevent-2.1.8-stable.tar.gz
+      cd libevent-2.1.8-stable
+      ./configure --enable-verbose-debug --prefix=/usr/local
+      make -j4
+      sudo make install
+      cd ..
+      rm -rf libevent-2.1.8-stable.tar.gz libevent-2.1.8-stable
+  - build: |
+      cd esocks
+      ./autogen.sh
+      ./configure --with-libevent=/usr/local
+      make test
+      sudo make install
