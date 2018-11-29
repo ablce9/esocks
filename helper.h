@@ -33,5 +33,6 @@ char *e_copy(char *dst, char *src, size_t s);
 void e_parse_line(char * const start);
 int e_read_file(const char *filename, char **out, int *out_len);
 int e_parse_conf_file(struct settings *st, const char *filename);
+void *e_get_sockaddr_storage(struct sockaddr_storage *ss);
 
 #endif

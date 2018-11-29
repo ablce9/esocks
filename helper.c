@@ -184,3 +184,11 @@ static void e_parse_conf_line(struct settings *st, char * const start)
   if (!strcmp("Workers", first_token))
     st->workers = atoi(token_val);
 }
+
+void *e_get_sockaddr_storage(struct sockaddr_storage *ss)
+{
+  if (ss->ss_family == AF_INET)
+    return &(((struct sockaddr_in *)ss)->sin_addr);
+
+  return &(((struct sockaddr_in6 *)ss)->sin6_addr);
+}

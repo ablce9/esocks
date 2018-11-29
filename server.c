@@ -7,6 +7,7 @@
 #define MAX_OUTPUT (4096*512)
 #define BACKLOG 1024
 
+#include "config.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -43,7 +44,6 @@ static void acceptcb(evutil_socket_t, short, void*);
 static void initcb(struct bufferevent *bev, void *ctx);
 static void parse_headercb(struct bufferevent *bev, void *ctx);
 static void next_readcb(struct bufferevent *bev, void *ctx);
-static void print_address(struct sockaddr *sa, int type, const char *ctx);
 static void event_log(short what, struct e_context_s *ctx);
 static void close_writecb(struct bufferevent *bev, void *ctx);
 static void libevent_dns_logfn(int is_warn, const char *msg);
@@ -207,13 +207,17 @@ static void listencb(evutil_socket_t fd, short what, void *ctx)
 {
   int new_fd;
   socklen_t addrlen;
+  u8 cli_addr[128];
 
   while (1) {
     struct sockaddr_storage ss;
-
     addrlen = sizeof(ss);
-    new_fd = accept(fd, (struct sockaddr *)&ss, &addrlen);
 
+#if (HAVE_ACCEPT4)
+    new_fd = accept4(fd, (struct sockaddr *)&ss, &addrlen, SOCK_NONBLOCK);
+#else
+    new_fd = accept(fd, (struct sockaddr *)&ss, &addrlen);
+#endif
     if (new_fd < 0)
       break;
 
@@ -223,6 +227,9 @@ static void listencb(evutil_socket_t fd, short what, void *ctx)
       evutil_closesocket(new_fd);
       continue;
     }
+
+    evutil_inet_ntop(ss.ss_family, e_get_sockaddr_storage(&ss), (char *)cli_addr, addrlen);
+    log_i("connection from %s", cli_addr);
 
     if (evutil_make_socket_closeonexec(fd) < 0)
       log_warn("%s: evutil_make_socket_closeonexec()", __func__);
@@ -302,6 +309,7 @@ static void acceptcb(evutil_socket_t fd, short what, void *ctx)
   struct bufferevent *partner;
   struct e_context_s *context;
   struct timeval tval = {settings.connection_timeout, 0};
+  u8 addr[128];
 
   bev = bufferevent_socket_new(e_base, fd,
 			       BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
@@ -324,12 +332,14 @@ static void acceptcb(evutil_socket_t fd, short what, void *ctx)
 
   if (settings.proxy) {
     // Set up proxy
+    // TODO: use sockaddr_storage instead here!
     struct sockaddr_in *sin = (struct sockaddr_in *)settings.proxy;
 
     context->st = e_init;
     context->event_handler = (bufferevent_data_cb *)fast_streamcb;
 
-    print_address((struct sockaddr *)&sin->sin_addr, AF_INET, "connect to");
+    evutil_inet_ntop(AF_INET, (struct sockaddr *)&sin->sin_addr, (char *)addr, sizeof(addr));
+    log_i("%s: connect to %s", __func__, addr);
 
     if (bufferevent_socket_connect(context->partner, (struct sockaddr *)sin,
 				   sizeof(struct sockaddr_in)) != 0) {
@@ -452,6 +462,7 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
   u8 socks_reply[10] = {SOCKS_VERSION, SUCCEEDED, 0, 1, 0, 0, 0, 0, 0, 0};
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
+  u8 server_addr[128];
 
   // dec
   evbuffer_copyout(src, buf, buf_size);
@@ -506,7 +517,9 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
     sin.sin_family = AF_INET;
     sin.sin_port = htons(port);
 
-    print_address((struct sockaddr *)&sin.sin_addr, AF_INET, NULL);
+    evutil_inet_ntop(AF_INET, (struct sockaddr *)&sin.sin_addr,
+		     (char *)server_addr, sizeof(server_addr));
+    log_i("%s: connecting to %s", __func__, server_addr);
 
     if (bufferevent_socket_connect(partner, (struct sockaddr *)&sin,
 				   sizeof(struct sockaddr_in)) != 0) {
@@ -877,31 +890,6 @@ static void libevent_logfn(int severity, const char *msg)
   default:
     break;
   }
-}
-
-static void print_address(struct sockaddr *sa, int type, const char *ctx)
-{
-  u8 out[128];
-
-  switch (type) {
-  case AF_INET:
-    if (evutil_inet_ntop(type, sa, (char *)out, sizeof(out)) == NULL)
-      goto err;
-    break;
-  case AF_INET6:
-    if (evutil_inet_ntop(type, sa, (void *)out, sizeof(out)) == NULL)
-      goto err;
-    break;
-  default:
-    log_warn("wrong type %d", type);
-    goto err;
-  }
-
-  ctx == NULL ? log_i("address=%s", out) : log_i("%s address=%s", ctx, out);
-  return;
-
- err:
-  log_warn("no address found");
 }
 
 static void event_log(short what, struct e_context_s *ctx)
