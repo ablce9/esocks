@@ -27,7 +27,6 @@ struct lru_node_s {
 const char *lru_get_key(lru_node_t *p);
 void lru_purge_all(lru_node_t **node_pptr);
 void lru_insert_left(lru_node_t **node_pptr, const char *key, void *data_p, size_t s);
-/* wait for x nanosecond */
 void lru_remove_oldest(lru_node_t **node_pptr, long timeout);
 lru_node_t *lru_init(void);
 lru_node_t *lru_get_node(lru_node_t **node, void *key, lru_cmp_func *func);

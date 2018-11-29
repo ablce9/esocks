@@ -24,8 +24,7 @@
 	 test_failed("failed to init cipher"); \
   } while (0);
 
-static void
-test_setting_init(void)
+static void test_setting_init(void)
 {
   const u8 iv16[16] = {
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
@@ -47,8 +46,7 @@ test_setting_init(void)
   settings.iv = key32;
 }
 
-static void
-announce(int ok_or_fail, const char *msg, va_list ap)
+static void announce(int ok_or_fail, const char *msg, va_list ap)
 {
   char buf[1024];
   char *status = ok_or_fail == 0 ? "\033[00;36mok\033[00;00m"
@@ -59,8 +57,7 @@ announce(int ok_or_fail, const char *msg, va_list ap)
   (void)fprintf(stderr, "[%s] %s\n", status, buf);
 }
 
-static void
-test_ok(const char *fmt, ...)
+static void test_ok(const char *fmt, ...)
 {
   va_list ap;
 
@@ -70,8 +67,7 @@ test_ok(const char *fmt, ...)
   announce(0, fmt, ap);
 }
 
-static void
-test_failed(const char *fmt, ...)
+static void test_failed(const char *fmt, ...)
 {
   va_list ap;
 
@@ -82,8 +78,7 @@ test_failed(const char *fmt, ...)
   exit(1);
 }
 
-static void
-test_lru_payload(void)
+static void test_lru_payload(void)
 {
   lru_node_t *node;
   lru_node_t *current;
@@ -131,8 +126,7 @@ test_lru_payload(void)
   test_ok("%s", __func__);
 }
 
-void
-test_lru_validate_tail(void)
+void test_lru_validate_tail(void)
 {
   lru_node_t *node;
   struct payload_s x;
@@ -169,8 +163,7 @@ test_lru_validate_tail(void)
   test_ok("%s", __func__);
 }
 
-void
-test_lru_remove_node(void)
+void test_lru_remove_node(void)
 {
   lru_node_t *node;
   struct payload_s x;
@@ -193,8 +186,7 @@ test_lru_remove_node(void)
   test_ok("%s", __func__);
 }
 
-static void
-test_lru_timeout_handler(void)
+static void test_lru_timeout_handler(void)
 {
   struct event_base *base = NULL;
   struct lru_node_s *node = NULL;
@@ -292,13 +284,11 @@ test_lru_timeout_handler(void)
   test_ok("%s", __func__);
 }
 
-static void
-logfn(int is_warn, const char *msg) {
+static void logfn(int is_warn, const char *msg) {
   fprintf(stderr, "%s: %s\n", is_warn ? "WARN" : "INFO", msg);
 }
 
-static void
-test_resolve_cb(void)
+static void test_resolve_cb(void)
 {
   struct event_base *base;
   struct evutil_addrinfo hints;
@@ -351,8 +341,7 @@ test_resolve_cb(void)
   test_ok("%s", __func__);
 }
 
-static void
-test_event_cb(void)
+static void test_event_cb(void)
 {
   struct event_base *base;
   struct bufferevent *bev0;
@@ -409,8 +398,7 @@ test_event_cb(void)
   test_ok("%s", __func__);
 }
 
-static void
-test_close_on_finished_writecb(void)
+static void test_close_on_finished_writecb(void)
 {
   static evutil_socket_t pair[2] = {0, 1};
   struct event_base *base;
@@ -463,8 +451,7 @@ test_close_on_finished_writecb(void)
   test_ok("%s", __func__);
 }
 
-static
-void test_crypto(void)
+static void test_crypto(void)
 {
   EVP_CIPHER_CTX *c1;
   EVP_CIPHER_CTX *c2;
@@ -491,8 +478,7 @@ void test_crypto(void)
   EVP_CIPHER_CTX_free(c2);
 }
 
-static
-void test_wrapped_crypto(void)
+static void test_wrapped_crypto(void)
 {
   static const int buf_size = 100;
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
@@ -527,8 +513,7 @@ void test_wrapped_crypto(void)
   test_ok("%s", __func__);
 }
 
-static void
-test_stream_encryption(void)
+static void test_stream_encryption(void)
 {
   EVP_CIPHER_CTX *c1;
   EVP_CIPHER_CTX *c2;
@@ -564,8 +549,7 @@ test_stream_encryption(void)
   EVP_CIPHER_CTX_free(c2);
 }
 
-static void
-test_can_read_conf_file()
+static void test_can_read_conf_file()
 {
   const char *filename = "./sample_esocks.conf";
   struct settings st;
@@ -608,8 +592,7 @@ struct testcase testcases[] = {
   {"test_can_read_config_file", test_can_read_conf_file},
 };
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
   int total_tests, current;
 

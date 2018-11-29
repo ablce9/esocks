@@ -12,14 +12,12 @@ static lru_node_t *lru_tail; // The tail of node
 static lru_node_t *get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func);
 static int cmp_func(const char *a, const char *b);
 
-static int
-cmp_func(const char *a, const char *b)
+static int cmp_func(const char *a, const char *b)
 {
   return a && b ? strcmp(a, b) : 1;
 }
 
-const char*
-lru_get_key(lru_node_t *p)
+const char* lru_get_key(lru_node_t *p)
 {
   if (p != NULL)
     return p->key;
@@ -27,8 +25,7 @@ lru_get_key(lru_node_t *p)
   return NULL;
 };
 
-lru_node_t*
-lru_init(void)
+lru_node_t* lru_init(void)
 {
   time_t now = time(&now);
   lru_node_t *node_ptr;
@@ -44,8 +41,7 @@ lru_init(void)
   return node_ptr;
 }
 
-void
-lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
+void lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
 {
   lru_node_t *ptr = *node;
   lru_node_t *next;
@@ -70,14 +66,12 @@ lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
   }
 }
 
-lru_node_t*
-lru_get_tail()
+lru_node_t* lru_get_tail()
 {
   return lru_tail;
 }
 
-lru_node_t*
-lru_get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
+lru_node_t* lru_get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
 {
   lru_node_t *ptr = *node_pptr;
 
@@ -87,8 +81,7 @@ lru_get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
   return NULL;
 }
 
-static lru_node_t*
-get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
+static lru_node_t* get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
 {
   lru_node_t *ptr = *node_pptr;
   lru_node_t *head = *node_pptr;
@@ -99,7 +92,7 @@ get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
     if (func(key, ptr->key) == 0) {
 
       if (func(key, head->key) == 0)
-	; // Do nothing here
+	;
 
       else if (func(key, tail->key) == 0) {
 	log_d(DEBUG, "%s: hits tail key \"%s\"", __func__, (char *)tail->key);
@@ -143,8 +136,7 @@ get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *func)
   return NULL;
 }
 
-void
-lru_purge_all(lru_node_t **node_pptr)
+void lru_purge_all(lru_node_t **node_pptr)
 {
   lru_node_t *ptr = *node_pptr;
 
@@ -162,8 +154,7 @@ lru_purge_all(lru_node_t **node_pptr)
 
 }
 
-void*
-lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
+void* lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
 {
   lru_node_t *tail = lru_tail;
   lru_node_t *current = *node_pptr;
@@ -171,27 +162,13 @@ lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
   time_t now = time(&now);
 
   while (tail) {
-      if (now - tail->start >= timeout && tail->key) {
-	log_i("%s: timeout event occurred and freeing \"%s\"",
-	      __func__, tail->key);
+    if (now - tail->start >= timeout && tail->key) {
+      log_i("%s: timeout event occurred and freeing \"%s\"", __func__, tail->key);
 
-	if (!cmp_func(tail->key, current->key)) {
-	  log_d(DEBUG, "%s: pop tail \"%s\"",
-		__func__, tail->key == NULL ? "myself" : tail->key);
-	  lru_tail = tail->next;
-	  tail->key = NULL;
-	  payload = tail->payload_ptr;
-	  tail->payload_ptr = NULL;
-	  tail->start = 0;
-	  tail = NULL;
-	  free(tail);
-	  *node_pptr = current;
-	break;
-	}
-
-	log_d(DEBUG, "%s: pop \"%s\"", __func__, tail->key);
+      if (!cmp_func(tail->key, current->key)) {
+	log_d(DEBUG, "%s: pop tail \"%s\"",
+	      __func__, tail->key == NULL ? "myself" : tail->key);
 	lru_tail = tail->next;
-	tail->next ? tail->next->prev = NULL : NULL;
 	tail->key = NULL;
 	payload = tail->payload_ptr;
 	tail->payload_ptr = NULL;
@@ -202,14 +179,26 @@ lru_get_oldest_payload(lru_node_t **node_pptr, long timeout)
 	break;
       }
 
+      log_d(DEBUG, "%s: pop \"%s\"", __func__, tail->key);
+      lru_tail = tail->next;
+      tail->next ? tail->next->prev = NULL : NULL;
+      tail->key = NULL;
+      payload = tail->payload_ptr;
+      tail->payload_ptr = NULL;
+      tail->start = 0;
+      tail = NULL;
+      free(tail);
+      *node_pptr = current;
       break;
     }
+
+    break;
+  }
 
   return payload;
 }
 
-void
-lru_remove_oldest(lru_node_t **node_pptr, long timeout)
+void lru_remove_oldest(lru_node_t **node_pptr, long timeout)
 {
   lru_node_t *tail = lru_tail;
   lru_node_t *next = tail->next;
@@ -217,21 +206,10 @@ lru_remove_oldest(lru_node_t **node_pptr, long timeout)
   time_t now = time(&now);
 
   for (;;) {
-      if (now - tail->start >= timeout && tail) {
+    if (now - tail->start >= timeout && tail) {
 
-	if (tail->key == current->key) {
-	  log_d(DEBUG, "pop \"%s\"", tail->key == NULL ? "myself" : tail->key);
-	  lru_tail = tail->next;
-	  tail->key = NULL;
-	  tail->payload_ptr = NULL;
-	  tail->start = 0;
-	  tail = NULL;
-	  free(tail);
-	break;
-	}
-
-	log_d(DEBUG, "pop \"%s\"", tail->key);
-	next->prev = NULL;
+      if (tail->key == current->key) {
+	log_d(DEBUG, "pop \"%s\"", tail->key == NULL ? "myself" : tail->key);
 	lru_tail = tail->next;
 	tail->key = NULL;
 	tail->payload_ptr = NULL;
@@ -241,6 +219,17 @@ lru_remove_oldest(lru_node_t **node_pptr, long timeout)
 	break;
       }
 
+      log_d(DEBUG, "pop \"%s\"", tail->key);
+      next->prev = NULL;
+      lru_tail = tail->next;
+      tail->key = NULL;
+      tail->payload_ptr = NULL;
+      tail->start = 0;
+      tail = NULL;
+      free(tail);
       break;
     }
+
+    break;
+  }
 }

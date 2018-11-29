@@ -11,8 +11,7 @@
 
 static void socks_log(int serverity, const char *msg);
 
-void
-log_ex(int eval, const char *fmt, ...)
+void log_ex(int eval, const char *fmt, ...)
 {
   va_list ap;
 
@@ -22,8 +21,7 @@ log_ex(int eval, const char *fmt, ...)
   exit(eval);
 }
 
-void
-log_e(const char *fmt, ...)
+void log_e(const char *fmt, ...)
 {
   va_list ap;
 
@@ -32,8 +30,7 @@ log_e(const char *fmt, ...)
   va_end(ap);
 }
 
-void
-log_warn(const char *fmt, ...)
+void log_warn(const char *fmt, ...)
 {
   va_list ap;
 
@@ -42,8 +39,7 @@ log_warn(const char *fmt, ...)
   va_end(ap);
 }
 
-void
-log_d(int v, const char *fmt, ...)
+void log_d(int v, const char *fmt, ...)
 {
   va_list ap;
 
@@ -54,8 +50,7 @@ log_d(int v, const char *fmt, ...)
   }
 }
 
-void
-log_i(const char *fmt, ...)
+void log_i(const char *fmt, ...)
 {
   va_list ap;
 
@@ -64,9 +59,7 @@ log_i(const char *fmt, ...)
   va_end(ap);
 }
 
-
-void
-log_output(int serverity, const char *errstr, const char *fmt, va_list ap)
+void log_output(int serverity, const char *errstr, const char *fmt, va_list ap)
 {
   char buf[512];
   size_t len;
@@ -87,8 +80,7 @@ log_output(int serverity, const char *errstr, const char *fmt, va_list ap)
   socks_log(serverity, buf);
 }
 
-static void
-socks_log(int serverity, const char *msg)
+static void socks_log(int serverity, const char *msg)
 {
   time_t t;
   struct timeval now;

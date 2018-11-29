@@ -12,8 +12,7 @@
 
 static void e_parse_conf_line(struct settings *st, char * const start);
 
-char*
-e_copy(char *dst, char *src, size_t s)
+char* e_copy(char *dst, char *src, size_t s)
 {
 
   while (s--) {
@@ -46,8 +45,7 @@ void e_parse_line(char * const start)
 
   Taken from libevent/evutil.c evutil_read_file_
 */
-int
-e_read_file(const char *filename, char **out, int *out_len)
+int e_read_file(const char *filename, char **out, int *out_len)
 {
   struct stat st;
   int fd;
@@ -102,8 +100,7 @@ e_read_file(const char *filename, char **out, int *out_len)
   return 0;
 }
 
-int
-e_parse_conf_file(struct settings *st, const char *filename)
+int e_parse_conf_file(struct settings *st, const char *filename)
 {
   char *out;
   char *start;
@@ -136,8 +133,7 @@ e_parse_conf_file(struct settings *st, const char *filename)
   return 0;
 }
 
-static void
-e_parse_conf_line(struct settings *st, char * const start)
+static void e_parse_conf_line(struct settings *st, char * const start)
 {
   char *first_token;
   char *token_val;

@@ -5,7 +5,7 @@
 
 struct dns_cache_config {
   struct lru_node_s *cache;
-  long               timeout;
+  long              timeout;
 };
 
 typedef enum {
@@ -26,19 +26,19 @@ typedef enum {
 } socks_status_e;
 
 struct e_context_s {
-  struct bufferevent *bev;
-  struct bufferevent *partner;
-  struct sockaddr_in *sin;
+  struct bufferevent  *bev;
+  struct bufferevent  *partner;
+  struct sockaddr_in  *sin;
   struct sockaddr_in6 *sin6;
   bufferevent_data_cb *event_handler;
-  socks_addr_t *socks_addr;
-  short                port;
-  char                 domain[256];
-  socks_status_e       st;
-  short                what;
-  _Bool                reversed;
-  EVP_CIPHER_CTX *evp_cipher_ctx;
-  EVP_CIPHER_CTX *evp_decipher_ctx;
+  socks_addr_t        *socks_addr;
+  short               port;
+  char                domain[256];
+  socks_status_e      st;
+  short               what;
+  _Bool               reversed;
+  EVP_CIPHER_CTX      *evp_cipher_ctx;
+  EVP_CIPHER_CTX      *evp_decipher_ctx;
 };
 
 void e_start_server(void);

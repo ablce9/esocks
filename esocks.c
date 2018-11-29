@@ -30,8 +30,7 @@ static void fatal_error_cb(int err)
   log_e("fata_error_cb got=%d\n", err);
 }
 
-static void
-settings_init(void)
+static void settings_init(void)
 {
 #define DEFAULT_SERVER_PORT 1080
   settings.listen_addr = "0.0.0.0";
@@ -75,8 +74,7 @@ settings_init(void)
   settings.cipher_name = "aes-256-cfb";
 }
 
-static
-void usage(void)
+static void usage(void)
 {
   printf("Esocks " ESOCKS_VERSION ", a socks5 proxy server\n"
 	 "Usage: esocks [OPTIONS...]\n"
@@ -101,8 +99,7 @@ void usage(void)
   exit(1);
 }
 
-static void
-ev_do_fork(int workers)
+static void ev_do_fork(int workers)
 {
   int j;
   pid_t pid;
@@ -138,8 +135,7 @@ ev_do_fork(int workers)
   }
 }
 
-static void
-save_pid(const char *pid_file)
+static void save_pid(const char *pid_file)
 {
   FILE *fp;
 
@@ -166,8 +162,7 @@ save_pid(const char *pid_file)
     log_ex(1, "fopen(%ld, w)", (long)getpid());
 }
 
-static void
-remove_pid(const char *pid_file)
+static void remove_pid(const char *pid_file)
 {
   if (pid_file == NULL)
     return;
@@ -176,8 +171,7 @@ remove_pid(const char *pid_file)
     log_ex(1, "unlink(%s)", pid_file);
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
   int port;
   int cc = 0;

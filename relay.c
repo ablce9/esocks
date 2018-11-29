@@ -7,14 +7,12 @@
 struct settings settings;
 static void  relay_streamcb(struct bufferevent *bev, void *ctx);
 
-void
-evs_setcb_for_local(struct bufferevent *bev, void *context)
+void evs_setcb_for_local(struct bufferevent *bev, void *context)
 {
   bufferevent_setcb(bev, fast_streamcb, NULL, eventcb, context);
 }
 
-void
-fast_streamcb(struct bufferevent *bev, void *ctx)
+void fast_streamcb(struct bufferevent *bev, void *ctx)
 {
   struct e_context_s *context = ctx;
   struct bufferevent *partner = context->partner;
@@ -48,8 +46,7 @@ fast_streamcb(struct bufferevent *bev, void *ctx)
   }
 }
 
-static void
-relay_streamcb(struct bufferevent *bev, void *ctx)
+static void relay_streamcb(struct bufferevent *bev, void *ctx)
 {
   struct e_context_s *context = ctx;
   struct bufferevent *partner = context->bev;
