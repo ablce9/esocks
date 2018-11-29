@@ -763,7 +763,7 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
       i++;
     }
 
-    log_i("%s: connect to %s", context->domain, __func__);
+    log_i("%s: connect to %s", __func__, context->domain);
 
     context->socks_addr = socks_addr;
 
