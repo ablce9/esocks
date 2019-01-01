@@ -501,10 +501,10 @@ static void test_wrapped_crypto(void)
     CIPHER_INIT(c1, settings.cipher, settings.key, settings.iv, 1);
     CIPHER_INIT(c2, settings.cipher, settings.key, settings.iv, 0);
 
-    outl = e_encrypt(c1, in, sizeof(in), enc_buf);
+    outl = openssl_encrypt(c1, enc_buf, in, sizeof(in));
     u8 dec_buf[outl];
 
-    outl = e_decrypt(c2, enc_buf, outl, dec_buf);
+    outl = openssl_decrypt(c2,  dec_buf, enc_buf, outl);
 
     assert(memcmp(in, dec_buf, outl) == 0);
     EVP_CIPHER_CTX_free(c1);
@@ -539,8 +539,8 @@ static void test_stream_encryption(void)
 
     i += 517;
     memcpy(in, buf, i);
-    e_encrypt(c1, in, i, enc_buf);
-    dec_total += e_decrypt(c2, enc_buf, i, dec_buf);
+    openssl_encrypt(c1, enc_buf, in, i);
+    dec_total += openssl_decrypt(c2,  dec_buf, enc_buf, i);
     assert(memcmp(in, dec_buf, dec_total) == 0);
   } while (i < buf_size);
 

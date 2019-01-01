@@ -346,7 +346,7 @@ static void acceptcb(evutil_socket_t fd, short what, void *ctx)
       u8 reply[2] = {5, NETWORK_UNREACHABLE};
 
       log_e("bufferevent_socket_connect(): failed to connect");
-      bufferevent_write(bev, reply, 2);
+      bufferevent_write(bev, reply, sizeof(reply));
       context->st = e_destroy;
       e_free_context(context);
     }
@@ -408,19 +408,17 @@ static void initcb(struct bufferevent *bev, void *ctx)
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
   int outl;
 
-  // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
-  e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+  openssl_decrypt(context->evp_decipher_ctx, dec_buf, buf, buf_size);
 
   log_i("%s: getting client and have %ld bytes", __func__, buf_size);
 
   // TODO: check NMETHODS
   if (dec_buf[0] == SOCKS_VERSION && dec_buf[2] == NO_AUTHENTICATION) {
-    // enc
     u8 p[2] = {SOCKS_VERSION, SUCCEEDED};
 
-    outl = e_encrypt(context->evp_cipher_ctx, p, sizeof(p), enc_buf);
+    outl = openssl_encrypt(context->evp_cipher_ctx, enc_buf, p, sizeof(p));
     bufferevent_write(bev, enc_buf, outl);
     context->st = e_init;
     bufferevent_setcb(bev, parse_headercb, NULL, eventcb, context);
@@ -464,11 +462,10 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
   u8 server_addr[128];
 
-  // dec
   evbuffer_copyout(src, buf, buf_size);
   evbuffer_drain(src, buf_size);
 
-  e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+  openssl_decrypt(context->evp_decipher_ctx, dec_buf, buf, buf_size);
 
   if (context->st == e_init && dec_buf[0] == SOCKS_VERSION) {
     switch (dec_buf[1]) {
@@ -481,10 +478,9 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
       break;
     default:
       log_warn("%s: unkonw command: %d", __func__, dec_buf[1]);
-      // enc
       socks_reply[1] = GENERAL_FAILURE;
-      buf_len = e_encrypt(context->evp_cipher_ctx, socks_reply,
-			  sizeof(socks_reply), enc_buf);
+      buf_len = openssl_encrypt(context->evp_cipher_ctx,
+				enc_buf, socks_reply, sizeof(socks_reply));
       bufferevent_write(bev, enc_buf, buf_len);
       bufferevent_disable(bev, EV_WRITE);
       context->st = e_destroy;
@@ -525,8 +521,7 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
 				   sizeof(struct sockaddr_in)) != 0) {
       log_e("%s: connect() failed to connect", __func__);
       socks_reply[1] = CONNECTION_REFUSED;
-      buf_len = e_encrypt(context->evp_cipher_ctx, socks_reply,
-			  sizeof(socks_reply), enc_buf);
+      buf_len = openssl_encrypt(context->evp_cipher_ctx, enc_buf, socks_reply, sizeof(socks_reply));
       bufferevent_write(bev, enc_buf, buf_len);
       context->st = e_destroy;
     } else
@@ -536,7 +531,8 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
     log_e("%s: IPv6 is not supported yet", __func__);
     socks_reply[1] = ADDRESS_TYPE_NOT_SUPPORTED;
     // enc
-    bufferevent_write(bev, socks_reply, 10);
+    buf_len = openssl_encrypt(context->evp_cipher_ctx, enc_buf, socks_reply, sizeof(socks_reply));
+    bufferevent_write(bev, enc_buf, buf_len);
     context->st = e_destroy;
     break;
   case DOMAINN:
@@ -589,9 +585,8 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
   }
 
   if (context->st == e_connected) {
-    int outl = e_encrypt(context->evp_cipher_ctx, socks_reply,
-			 sizeof(socks_reply), enc_buf);
-    bufferevent_write(bev, enc_buf, outl);
+    buflen = openssl_encrypt(context->evp_cipher_ctx, enc_buf, socks_reply, sizeof(socks_reply));
+    bufferevent_write(bev, enc_buf, buflen);
     bufferevent_setcb(bev, next_readcb, NULL, eventcb, context);
     bufferevent_enable(bev, EV_READ|EV_WRITE);
   }
@@ -621,15 +616,16 @@ static void next_readcb(struct bufferevent *bev, void *ctx)
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
+  int buflen;
 
   if (context->st == e_connected && buf_size) {
     evbuffer_copyout(src, buf, buf_size);
     evbuffer_drain(src, buf_size);
 
     // dec
-    int outl = e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
+    buflen = openssl_decrypt(context->evp_decipher_ctx, dec_buf, buf, buf_size);
 
-    if (bufferevent_write(partner, dec_buf, outl) < 0) {
+    if (bufferevent_write(partner, dec_buf, buflen) < 0) {
       log_e("%s: bufferevent_write", __func__);
       context->st = e_destroy;
     } else {
@@ -647,7 +643,7 @@ void handle_streamcb(struct bufferevent *bev, void *ctx)
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev);
   struct evbuffer *dst;
-  int outl;
+  int buflen;
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
@@ -661,9 +657,10 @@ void handle_streamcb(struct bufferevent *bev, void *ctx)
     // enc
     evbuffer_copyout(src, buf, buf_size);
     evbuffer_drain(src, buf_size);
-    outl = e_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
 
-    if (bufferevent_write(partner, enc_buf, outl) != 0) {
+    buflen = openssl_encrypt(context->evp_cipher_ctx, enc_buf, buf, buf_size);
+
+    if (bufferevent_write(partner, enc_buf, buflen) != 0) {
       log_e("%s: failed to write", __func__);
       context->st = e_destroy;
     } else {
@@ -707,6 +704,7 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
   struct e_context_s *context = ptr;
   struct evutil_addrinfo *ai_p;
   socks_addr_t *socks_addr;
+  int buflen;
   int i;
   int try;
   // Send out 10 bytes to reply OK!
@@ -795,9 +793,9 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
     context->st = e_connected;
 
     if (context->bev != NULL) {
-      int outl = e_encrypt(context->evp_cipher_ctx, resp, sizeof(resp), enc_buf);
+      buflen = openssl_encrypt(context->evp_cipher_ctx, enc_buf, resp, sizeof(resp));
 
-      bufferevent_write(context->bev, enc_buf, outl);
+      bufferevent_write(context->bev, enc_buf, buflen);
       bufferevent_setcb(context->bev, next_readcb, NULL, eventcb, context);
       bufferevent_enable(context->bev, EV_READ|EV_WRITE);
     }
@@ -904,14 +902,4 @@ static void event_log(short what, struct e_context_s *ctx)
 	(what & BEV_EVENT_ERROR) ? "e_error" : "",
 	(what & BEV_EVENT_TIMEOUT) ? "e_timeout" : "",
 	(what & BEV_EVENT_CONNECTED) ? "e_connected" : "");
-}
-
-int e_encrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
-{
-  return openssl_encrypt(ctx, out, in, ilen);
-}
-
-int e_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out)
-{
-  return openssl_decrypt(ctx, out, in, ilen);
 }

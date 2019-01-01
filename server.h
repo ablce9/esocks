@@ -51,8 +51,6 @@ void handle_streamcb(struct bufferevent *bev, void *ctx);
 void evs_setcb_for_local(struct bufferevent *bev, void *context);
 void eventcb(struct bufferevent *bev, short what, void *ctx);
 void clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx);
-int e_encrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out);
-int e_decrypt(EVP_CIPHER_CTX *ctx, u8 *in, int ilen, u8 *out);
 int daemonize(int nochdir, int noclose);
 
 #endif

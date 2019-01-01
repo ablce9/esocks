@@ -20,7 +20,7 @@ void fast_streamcb(struct bufferevent *bev, void *ctx)
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 enc_buf[SOCKS_MAX_BUFFER_SIZE];
-  int outl;
+  int buflen;
 
   if (!partner || !buf_size) {
     evbuffer_drain(src, buf_size);
@@ -32,8 +32,8 @@ void fast_streamcb(struct bufferevent *bev, void *ctx)
 
   if (context->st == e_connected && context->partner) {
     // enc
-    outl = e_encrypt(context->evp_cipher_ctx, buf, buf_size, enc_buf);
-    if (bufferevent_write(partner, enc_buf, outl) != 0) {
+    buflen = openssl_encrypt(context->evp_cipher_ctx, enc_buf, buf, buf_size);
+    if (bufferevent_write(partner, enc_buf, buflen) != 0) {
       log_e("failed to write");
       context->st = e_destroy;
     } else {
@@ -51,7 +51,7 @@ static void relay_streamcb(struct bufferevent *bev, void *ctx)
   struct e_context_s *context = ctx;
   struct bufferevent *partner = context->bev;
   struct evbuffer *src = bufferevent_get_input(bev);
-  int outl;
+  int buflen;
   size_t buf_size = evbuffer_get_length(src);
   u8 buf[buf_size];
   u8 dec_buf[SOCKS_MAX_BUFFER_SIZE];
@@ -66,8 +66,8 @@ static void relay_streamcb(struct bufferevent *bev, void *ctx)
     evbuffer_copyout(src, buf, buf_size);
     evbuffer_drain(src, buf_size);
 
-    outl = e_decrypt(context->evp_decipher_ctx, buf, buf_size, dec_buf);
-    if (bufferevent_write(partner, dec_buf, outl) != 0) {
+    buflen = openssl_decrypt(context->evp_decipher_ctx, dec_buf, buf, buf_size);
+    if (bufferevent_write(partner, dec_buf, buflen) != 0) {
       log_e("failed to write");
       context->st = e_destroy;
     } else {
