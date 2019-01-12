@@ -33,5 +33,10 @@ maintainer-clean-local:
 	-rm config.log
 	-rm config.status
 
-style:
-	./scripts/checkpatch.pl -f --max-line-length=4000 --color=always --no-tree $(wildcard *.c) $(wildcard *.h)
+version.h:
+	ver="#define ESOCKS_VERSION \"$$(git describe --dirty 2>/dev/null)\"" && \
+	[ "$$(cat version.h 2>/dev/null)" != "$$ver" ] && \
+	echo "$$ver" > version.h && \
+	git update-index --assume-unchanged version.h || true
+
+.PHONY: version.h

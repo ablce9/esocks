@@ -24,4 +24,3 @@ configure
 testapp
 node_modules/
 package-lock.json
-version.h
