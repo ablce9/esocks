@@ -183,6 +183,9 @@ static void e_parse_conf_line(struct settings *st, char * const start)
 
   if (!strcmp("Workers", first_token))
     st->workers = atoi(token_val);
+
+  if (!strcmp("Pid", first_token))
+    st->pid_file = token_val;
 }
 
 void *e_get_sockaddr_storage(struct sockaddr_storage *ss)
