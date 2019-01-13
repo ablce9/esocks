@@ -7,28 +7,28 @@
 
 int openssl_encrypt(EVP_CIPHER_CTX *ctx, u8 *out, u8 *in, int ilen)
 {
-  int len = 0;
+    int len = 0;
 
-  if (!EVP_EncryptUpdate(ctx, out, &len, in, ilen))
-    goto err;
+    if (!EVP_EncryptUpdate(ctx, out, &len, in, ilen))
+	goto err;
 
-  return len;
+    return len;
 
- err:
-  fprintf(stderr, "error occurred\n");
-  return (-1);
+err:
+    fprintf(stderr, "error occurred\n");
+    return (-1);
 }
 
 int openssl_decrypt(EVP_CIPHER_CTX *ctx, u8 *out, u8 *in, int ilen)
 {
-  int len = 0;
+    int len = 0;
 
-  if (!EVP_DecryptUpdate(ctx, out, &len, in, ilen))
-    goto err;
+    if (!EVP_DecryptUpdate(ctx, out, &len, in, ilen))
+	goto err;
 
-  return len;
+    return len;
 
- err:
-  fprintf(stderr, "error occurred\n");
-  return (-1);
+err:
+    fprintf(stderr, "error occurred\n");
+    return (-1);
 }

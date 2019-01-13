@@ -10,18 +10,18 @@ typedef int lru_get_key_func(void *);
 typedef struct payload_s payload_t;
 
 struct payload_s {
-  const void *key;
-  void *val;
+    const void *key;
+    void *val;
 };
 
 typedef struct lru_node_s lru_node_t;
 
 struct lru_node_s {
-  time_t      start;
-  const char *key;
-  void *payload_ptr;
-  lru_node_t *next;
-  lru_node_t *prev;
+    time_t      start;
+    const char *key;
+    void *payload_ptr;
+    lru_node_t *next;
+    lru_node_t *prev;
 };
 
 const char *lru_get_key(lru_node_t *p);

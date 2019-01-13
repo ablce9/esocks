@@ -11,22 +11,22 @@
 #include "lru.h"
 
 struct socks_addr {
-  struct sockaddr *sockaddr;
-  socklen_t        socklen;
+    struct sockaddr *sockaddr;
+    socklen_t        socklen;
 };
 
 typedef struct {
-  struct socks_addr *addrs;
-  int                naddrs;
+    struct socks_addr *addrs;
+    int                naddrs;
 } socks_addr_t;
 
 typedef struct socks_name_s {
-  u8                 hlen;
-  u16                port;
-  int                family;
-  char               domain[256];
-  socks_addr_t *addrs;
-  struct sockaddr *sa;
+    u8                 hlen;
+    u16                port;
+    int                family;
+    char               domain[256];
+    socks_addr_t *addrs;
+    struct sockaddr *sa;
 } socks_name_t;
 
 char *e_copy(char *dst, char *src, size_t s);
