@@ -18,12 +18,15 @@
 
 struct settings settings;
 
+static int quit = 0;
+
 static void settings_init(void);
 static void usage(void);
 static void fatal_error_cb(int err);
-static void ev_do_fork(int workers);
+static void start_master_process(int workers);
 static void save_pid(const char *pid_file);
 static void remove_pid(const char *pid_file);
+static void sig_handler(int sig);
 
 static void fatal_error_cb(int err)
 {
@@ -52,21 +55,21 @@ static void settings_init(void)
     // TODO: dns ttl
 #define DEFAULT_DNS_CACHE_TVAL 6500;
     settings.dns_cache_tval = DEFAULT_DNS_CACHE_TVAL;
-#define DEFAULT_WORKER_NUMBER 0
+#define DEFAULT_WORKER_NUMBER 1
     settings.workers = DEFAULT_WORKER_NUMBER;
     settings.daemon_mode = false;
     settings.pid_file = "/var/run/esocks.pid";
 
     // TODO: refactor, this ain't good for security!
     const u8 key16[16] = {
-	0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-	0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
+			  0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+			  0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
     };
     const u8 ckey32[32] = {
-	0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-	0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12,
-	0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
-	0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56
+			   0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+			   0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12,
+			   0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
+			   0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56
     };
 
     settings.key = ckey32;
@@ -95,43 +98,90 @@ static void usage(void)
 	   "  -t  timeout for connections (default 300 seconds)\n"
 	   "  -g  nameserver\n"
 	   "  -V  show version number\n"
-	);
+	   );
     exit(1);
 }
 
-static void ev_do_fork(int workers)
+static void sig_handler(int sig)
+{
+    switch (sig) {
+    case SIGTERM:
+    case SIGINT:
+	quit++;
+    default:
+	break;
+    }
+}
+
+static void start_master_process(int num)
 {
     int j;
     pid_t pid;
-    int workers_ = workers-1;
-    pid_t pids[workers_];
+    int workers = num;
+    pid_t pids[workers];
+    struct sigaction sa;
+    sigset_t  orig_set, set;
+
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGINT);
+
+    if (sigprocmask(SIG_BLOCK, &set, &orig_set) == -1)
+	log_e("sigprocmask");
+
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = sig_handler;
+
+    if (sigaction(SIGTERM, &sa, NULL) == -1)
+	log_e("sigaction - SIGTERM");
+
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+	log_e("sigaction - SIGINT");
 
     log_i("fork(): parent pid=%ld", (long)getpid());
-    for (j = 0; j < workers_; j++) {
+    for (j = 0; j < workers; j++) {
+
 	pid = fork();
-	if (pid == 0) {
-	    // child process
+
+	switch (pid) {
+
+	case -1:
+	    log_e("fork(): failed while forking \"%ld\"", (long)getpid());
+	    return;
+
+	case 0:
 	    log_i("fork(): child pid=%ld", (long)getpid());
+
+	    if (sigprocmask(SIG_SETMASK, &orig_set, NULL) == -1)
+		log_e("sigprocmask");
+
 	    e_start_server();
 	    exit(0);
-	} else
+
+	default:
 	    pids[j] = pid;
+	    break;
+	}
     }
 
-    e_start_server();
-    log_i("event_loopexit(): parent's loop just exited.");
+    for ( ;; ) {
 
-    for (j = 0; j < workers_; j++) {
+	if (quit)
+	    break;
+
+	sigsuspend(&orig_set);
+    }
+
+    if (sigprocmask(SIG_SETMASK, &orig_set, NULL) == -1)
+	log_e("sigprocmask");
+
+    for (j = 0; j < workers; j++) {
 	int status;
 
 	kill(pids[j], SIGTERM);
 	if ((waitpid(pids[j], &status, 0)) == -1)
 	    log_e("waitpid()");
-
-	if (WIFEXITED(status))
-	    log_i("WIFEXITED(): child excited");
-	if (WIFSIGNALED(status))
-	    log_i("WIFSIGNALED(): child killed by signal");
     }
 }
 
@@ -298,10 +348,7 @@ int main(int argc, char **argv)
     log_d(DEBUG, "running in debug mode, timeout=%d mode=%s",
 	  settings.connection_timeout, settings.cipher_name);
 
-    if (settings.workers)
-	ev_do_fork(settings.workers);
-    else
-	(void)e_start_server();
+    start_master_process(settings.workers);
 
     remove_pid(settings.pid_file);
     exit(0);

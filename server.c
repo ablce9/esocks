@@ -841,11 +841,10 @@ static void signalcb(evutil_socket_t sig_flag, short what, void *ctx)
 {
     struct event_base *base = ctx;
 #define SIGNAL_DELAY 2
-    struct timeval delay = {SIGNAL_DELAY, 0};
-    int sec = SIGNAL_DELAY;
+  struct timeval delay = {SIGNAL_DELAY, 0};
 
-    log_i("Caught an interupt signal; exiting cleanly in %d second(s)", sec);
-    event_base_loopexit(base, &delay);
+  log_i("%s: pid=%ld, exiting", __func__, (long)getpid());
+  event_base_loopexit(base, &delay);
 }
 
 void clean_dns_cache_func(evutil_socket_t sig_flag, short what, void *ctx)
