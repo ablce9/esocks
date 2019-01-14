@@ -30,13 +30,13 @@ lru_node_t* lru_init(void)
     time_t now = time(&now);
     lru_node_t *node_ptr;
 
-    node_ptr = calloc(1, sizeof(struct lru_node_s));
+    node_ptr = calloc(1, sizeof(*node_ptr));
+    if (!node_ptr)
+	return NULL;
 
-    if (node_ptr != NULL) {
-	node_ptr->next = NULL;
-	node_ptr->prev = NULL;
-	node_ptr->key = NULL;
-    }
+    node_ptr->next = NULL;
+    node_ptr->prev = NULL;
+    node_ptr->key = NULL;
 
     return node_ptr;
 }
@@ -49,8 +49,9 @@ void lru_insert_left(lru_node_t **node, const char *key, void *data, size_t s)
 
     ASSERT(ptr);
 
-    next = calloc(1, sizeof(struct lru_node_s));
-    ASSERT(next);
+    next = calloc(1, sizeof(*next));
+    if (!next)
+	return;
 
     ptr->next = next;
     next->prev = ptr;
