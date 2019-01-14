@@ -242,17 +242,17 @@ static void test_lru_timeout_handler(void)
 
     assert(i != 0);
 
-    sock_addr = calloc(1, sizeof(socks_addr_t));
+    sock_addr = calloc(1, sizeof(*sock_addr));
     assert(sock_addr != NULL);
 
-    sock_addr->addrs = malloc(i * sizeof(struct socks_addr));
+    sock_addr->addrs = malloc(i * sizeof(*sock_addr->addrs));
     assert(sock_addr->addrs != NULL);
 
     for (i = 0, p = res; p != NULL; p = p->ai_next) {
 	if (p->ai_family != AF_INET)
 	    continue;
 
-	sin = malloc(sizeof(struct sockaddr_in));
+	sin = malloc(sizeof(*sin));
 	assert(sin != NULL);
 
 	memcpy(sin, p->ai_addr, p->ai_addrlen);
@@ -311,7 +311,7 @@ static void test_resolve_cb(void)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    ctx = calloc(1, sizeof(struct e_context_s));
+    ctx = calloc(1, sizeof(*ctx));
     assert(ctx);
 
     ctx->st = e_dns_wip;

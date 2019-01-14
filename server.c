@@ -249,27 +249,28 @@ static struct e_context_s* e_new_context(void)
 {
     struct e_context_s *ctx;
 
-    ctx = calloc(1, sizeof(struct e_context_s));
+    ctx = calloc(1, sizeof(*ctx));
 
-    if (ctx != NULL) {
-	ctx->bev = NULL;
-	ctx->partner = NULL;
-	ctx->sin = NULL;
-	ctx->sin6 = NULL;
-	ctx->socks_addr = NULL;
-	ctx->st = 0;
-	ctx->reversed = false;
-	ctx->event_handler = NULL;
-	ctx->evp_cipher_ctx = EVP_CIPHER_CTX_new();
-	ctx->evp_decipher_ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+	return NULL;
 
-	if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL,
-			       settings.key, settings.iv, 1))
-	    return NULL;
-	if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL,
-			       settings.key, settings.iv, 0))
-	    return NULL;
-    }
+    ctx->bev = NULL;
+    ctx->partner = NULL;
+    ctx->sin = NULL;
+    ctx->sin6 = NULL;
+    ctx->socks_addr = NULL;
+    ctx->st = 0;
+    ctx->reversed = false;
+    ctx->event_handler = NULL;
+    ctx->evp_cipher_ctx = EVP_CIPHER_CTX_new();
+    ctx->evp_decipher_ctx = EVP_CIPHER_CTX_new();
+
+    if (!EVP_CipherInit_ex(ctx->evp_cipher_ctx, settings.cipher, NULL,
+			   settings.key, settings.iv, 1))
+	return NULL;
+    if (!EVP_CipherInit_ex(ctx->evp_decipher_ctx, settings.cipher, NULL,
+			   settings.key, settings.iv, 0))
+	return NULL;
 
     return ctx;
 }
@@ -700,7 +701,7 @@ void resolve(struct e_context_s *context)
 
 void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 {
-    struct sockaddr_in *sin_p;
+    struct sockaddr_in *sin;
     struct e_context_s *context = ptr;
     struct evutil_addrinfo *ai_p;
     socks_addr_t *socks_addr;
@@ -732,13 +733,17 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	if (i == 0)
 	    goto failed;
 
-	socks_addr = calloc(1, sizeof(socks_addr_t));
-	if (!socks_addr)
-	    log_warn("%s: calloc", __func__);
+	socks_addr = calloc(1, sizeof(*socks_addr));
+	if (!socks_addr) {
+	    log_e("%s: calloc", __func__);
+	    goto failed;
+	}
 
-	socks_addr->addrs = malloc(i * sizeof(struct socks_addr));
-	if (!socks_addr->addrs)
-	    log_warn("%s: malloc", __func__);
+	socks_addr->addrs = malloc(i * sizeof(*socks_addr->addrs));
+	if (!socks_addr->addrs) {
+	    log_e("%s: malloc", __func__);
+	    goto failed;
+	}
 
 	socks_addr->naddrs = i;
 
@@ -746,16 +751,18 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	    if (ai_p->ai_family != AF_INET)
 		continue;
 
-	    sin_p = malloc(sizeof(struct sockaddr_in));
-	    if (!sin_p)
-		log_warn("%s: malloc", __func__);
+	    sin = malloc(sizeof(*sin));
+	    if (!sin) {
+		log_e("%s: malloc", __func__);
+		goto failed;
+	    }
 
-	    memcpy(sin_p, ai_p->ai_addr, ai_p->ai_addrlen);
+	    memcpy(sin, ai_p->ai_addr, ai_p->ai_addrlen);
 
-	    sin_p->sin_port = context->port;
-	    sin_p->sin_family = AF_INET;
+	    sin->sin_port = context->port;
+	    sin->sin_family = AF_INET;
 
-	    socks_addr->addrs[i].sockaddr = (struct sockaddr *)sin_p;
+	    socks_addr->addrs[i].sockaddr = (struct sockaddr *)sin;
 	    socks_addr->addrs[i].socklen = ai_p->ai_addrlen;
 
 	    i++;
@@ -765,20 +772,19 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 
 	context->socks_addr = socks_addr;
 
-	// Start to connect to a server.
 	for (try = 0; try < i; try++) {
-	    struct sockaddr_in sin;
+	    struct sockaddr_in s;
 
-	    memset(&sin, 0, sizeof(sin));
+	    memset(&s, 0, sizeof(s));
 	    memcpy(&sin, context->socks_addr->addrs[try].sockaddr,
 		   context->socks_addr->addrs[try].socklen);
 
-	    sin.sin_family = AF_INET;
-	    sin.sin_port = context->port;
+	    s.sin_family = AF_INET;
+	    s.sin_port = context->port;
 
-	    if (bufferevent_socket_connect(context->partner, (struct sockaddr *)&sin,
+	    if (bufferevent_socket_connect(context->partner, (struct sockaddr *)&s,
 					   sizeof(struct sockaddr_in)) == 0) {
-		log_i("%s: changing status to e_dns_ok", __func__);
+		log_d(DEBUG, "%s: changing status to e_dns_ok", __func__);
 		context->st = e_dns_ok;
 		break;
 	    }
@@ -801,7 +807,7 @@ void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 	}
     } else {
 	context->st = e_destroy;
-	log_i("%s: can\'nt establish connection to %s", context->domain, __func__);
+	log_e("%s: can\'nt establish connection to %s", context->domain, __func__);
     }
 
     if (ai)
