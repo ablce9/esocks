@@ -119,7 +119,6 @@ static lru_node_t* get_node(lru_node_t **node_pptr, void *key, lru_cmp_func *fun
 		ptr->next = NULL;
 		ptr->prev = head;
 
-		memcpy(ptr->payload_ptr, ptr->payload_ptr, sizeof(*ptr->payload_ptr));
 		head->next = ptr;
 	    }
 
