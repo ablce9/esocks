@@ -1,6 +1,10 @@
+require 'ipaddr'
 require_relative 'helper'
 
-class TestTest1 < Test::Unit::TestCase
+IPV4_ADDR = IPAddr.new('172.217.31.142') # google.com
+HTTP_PORT = 80
+
+class Test1 < Test::Unit::TestCase
 
   include Helper::Client
 
@@ -15,10 +19,27 @@ class TestTest1 < Test::Unit::TestCase
     run_server('-p', '2020', '-s', '127.0.0.1', '-j', '2021', '-k', 'password', '-P', './pids/2.pid') # client
     sleep 1
     socket = create_socks_client('127.0.0.1', 2020)
-    socket.send("\x05\x00\x00", 4)
-    ret = socket.read(2)
-    assert_equal ret[0], "\x05"
-    assert_equal ret[1], "\x00"
+    send(socket, "\x05\x00\x00") do |num|
+      assert_equal num, 3
+    end
+    read(socket, 2) do |buf|
+      assert_equal buf[0].unpack('C')[0], 5
+      assert_equal buf[1].unpack('C')[0], 0
+    end
+    send(
+      socket,
+      "\x05\x01\x00\x01" +
+      IPV4_ADDR.hton +
+      byte_to_short(HTTP_PORT)) do |num|
+      assert_equal num, 10
+    end
+    read(socket, 2) do |buf|
+      assert_equal buf[0].unpack('C')[0], 5
+      assert_equal buf[1].unpack('C')[0], 0
+    end
+    send(socket, "GET /\n\n") do |num|
+      assert_equal num, 7
+    end
     killall
   end
 end

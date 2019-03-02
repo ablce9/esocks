@@ -30,7 +30,7 @@ module Helper
   end
 
   def killall
-    pids.map do |pid|
+    pids.each do |pid|
       Process.kill(SIGNAL, pid)
     end
   rescue Errno::ESRCH => e
@@ -62,6 +62,30 @@ module Helper
       rescue Errno::EINPROGRESS
       end
       socket # .send(0x5, 0x01, 0x00, 3)
+    end
+
+    def send(socket, msg, &block) # int
+      begin
+        ret = socket.sendmsg_nonblock(msg)
+        yield ret
+      rescue IO::WaitWritable
+        IO.select([socket])
+        retry
+      end
+    end
+
+    def read(socket, len, &block) # buf
+      begin
+        ret = socket.recvmsg_nonblock(len)[0]
+        yield ret
+      rescue IO::WaitReadable
+        IO.select([socket])
+        retry
+      end
+    end
+
+    def byte_to_short(n)
+      [n >> 8, n&0x0ff].map(&:chr).join
     end
   end
 end
