@@ -31,7 +31,7 @@
 
 /* Global settings */
 struct settings settings;
-static struct event_base *e_base;
+static struct event_base *the_event_base;
 static struct evdns_base *dns_base;
 
 /* Lru node for dns cache */
@@ -137,23 +137,23 @@ void e_start_server(void)
 
     e_conf = event_config_new();
     event_config_set_flag(e_conf, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
-    e_base = event_base_new_with_config(e_conf);
+    the_event_base = event_base_new_with_config(e_conf);
     event_config_free(e_conf);
 #else
-    e_base = event_base_new();
+    the_event_base = event_base_new();
 #endif
 
-    signal_event = event_new(e_base, SIGTERM|SIGKILL|SIGINT,
-			     EV_SIGNAL|EV_PERSIST, signalcb, (void *)e_base);
+    signal_event = event_new(the_event_base, SIGTERM|SIGKILL|SIGINT,
+			     EV_SIGNAL|EV_PERSIST, signalcb, (void *)the_event_base);
     event_add(signal_event, NULL);
 
     /* SIGPIPE happens when connection is reset by peer. */
     signal_flags |= SIGPIPE;
-    sigpipe_event = event_new(e_base, signal_flags,
-			      EV_SIGNAL|EV_PERSIST, sigpipecb, (void *)e_base);
+    sigpipe_event = event_new(the_event_base, signal_flags,
+			      EV_SIGNAL|EV_PERSIST, sigpipecb, (void *)the_event_base);
     event_add(sigpipe_event, NULL);
 
-    listen_event = event_new(e_base, fd,
+    listen_event = event_new(the_event_base, fd,
 			     EV_READ|EV_PERSIST, listencb, NULL);
     event_add(listen_event, NULL);
 
@@ -162,7 +162,7 @@ void e_start_server(void)
 
 	log_i("%s: start DNS service", __func__);
 
-	dns_base = evdns_base_new(e_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+	dns_base = evdns_base_new(the_event_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
 	if (dns_base == NULL)
 	    log_ex(1, "%s: evdns_base_new", __func__);
 
@@ -179,18 +179,18 @@ void e_start_server(void)
 	cache_config.cache = node;
 	cache_config.timeout = (long) dns_cache_tval.tv_sec;
 
-	handle_dns_cache = event_new(e_base, -1,
+	handle_dns_cache = event_new(the_event_base, -1,
 				     EV_TIMEOUT|EV_PERSIST, clean_dns_cache_func,
 				     (void *)&cache_config);
 
 	event_add(handle_dns_cache, &dns_cache_tval);
     }
 
-    event_base_dispatch(e_base);
+    event_base_dispatch(the_event_base);
     event_free(signal_event);
     event_free(sigpipe_event);
     event_free(listen_event);
-    event_base_free(e_base);
+    event_base_free(the_event_base);
     if (!settings.proxy) {
 	evdns_base_free(dns_base, 0);
 	lru_purge_all(&node);
@@ -312,10 +312,10 @@ static void acceptcb(evutil_socket_t fd, short what, void *ctx)
     struct timeval tval = {settings.connection_timeout, 0};
     u8 addr[128];
 
-    bev = bufferevent_socket_new(e_base, fd,
+    bev = bufferevent_socket_new(the_event_base, fd,
 				 BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-    partner = bufferevent_socket_new(e_base, -1,
+    partner = bufferevent_socket_new(the_event_base, -1,
 				     BEV_OPT_CLOSE_ON_FREE|
 				     BEV_OPT_DEFER_CALLBACKS);
 
