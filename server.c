@@ -143,6 +143,10 @@ void e_start_server(void)
     the_event_base = event_base_new();
 #endif
 
+    if (!the_event_base) {
+	log_ex(1, "Unable to initialize Libevent");
+    }
+
     signal_event = event_new(the_event_base, SIGTERM|SIGKILL|SIGINT,
 			     EV_SIGNAL|EV_PERSIST, signalcb, (void *)the_event_base);
     event_add(signal_event, NULL);
@@ -200,7 +204,7 @@ void e_start_server(void)
 
 err:
     evutil_closesocket(fd);
-    log_ex(1, "%s: A fatal error occurred", __func__);
+    log_ex(1, "%s: fatal error occurred", __func__);
 }
 
 static void listencb(evutil_socket_t fd, short what, void *ctx)
