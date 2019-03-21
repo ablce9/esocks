@@ -4,13 +4,7 @@
 ## SYNOPSIS
 
 ```console
-  % ./esocks -p2000 -s 192.168.0.153 -k this-is-my-password,yo
-  % ./esocks -j2000 -u 192.168.0.153 -s 127.0.0.1 -k this-is-my-password,yo
-  % ss -4np state listening
-Netid  Recv-Q Send-Q                           Local Address:Port    Peer Address:Port
-tcp    0      128                              192.168.0.153:2000               *:*          users:(("esocks",pid=28724,fd=3))
-tcp    0      128                                  127.0.0.1:1080               *:*          users:(("esocks",pid=28723,fd=3))
-  % curl --socks5 0.0.0.0:1080 google.com -v
+ $ esocks
 ```
 
 ## DESCRIPTION
@@ -41,3 +35,7 @@ The app uses libevent as backend. Thus, a server is supposed to run in single th
 
 ## See also
  - http://blog.zorinaq.com/my-experience-with-the-great-firewall-of-china/
+
+## License
+
+This project is released under the [GPLv2](COPYING).
