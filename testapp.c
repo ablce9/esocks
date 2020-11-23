@@ -200,7 +200,7 @@ static void test_lru_timeout_handler(void)
     socks_addr_t *sock_addr;
     int err;
     int i;
-    char *hostname = "client-event-reporter.twitch.tv";
+    char *hostname = "google.com";
     char *port = "443";
     short what = 0;
 
