@@ -1,6 +1,6 @@
 FROM debian:stretch
 
-ENV LIBEVENT_VERSION 2.1.8
+ENV LIBEVENT_VERSION 2.1.12
 
 RUN apt-get update -y && apt-get upgrade -y
 
