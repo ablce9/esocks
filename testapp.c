@@ -288,7 +288,7 @@ static void logfn(int is_warn, const char *msg) {
     fprintf(stderr, "%s: %s\n", is_warn ? "WARN" : "INFO", msg);
 }
 
-static void test_resolve_cb(void)
+static void test_resolve_dns_cb(void)
 {
     struct event_base *base;
     struct evutil_addrinfo hints;
@@ -323,7 +323,7 @@ static void test_resolve_cb(void)
 
     err = evutil_getaddrinfo(hostname, port, &hints, &res);
 
-    resolvecb(err, res, ctx);
+    resolve_dnscb(err, res, ctx);
 
     assert(ctx->socks_addr->naddrs > 0);
     assert(ctx->st == e_connected);
@@ -584,7 +584,7 @@ struct testcase testcases[] = {
     {"test_lru_remove_node", test_lru_remove_node},
     {"test_event_cb", test_event_cb},
     {"test_close_on_finished_writecb", test_close_on_finished_writecb},
-    {"test_resolve_cb", test_resolve_cb},
+    {"test_resolve_dns_cb", test_resolve_dns_cb},
     {"test_lru_timeout_handler", test_lru_timeout_handler},
     {"test_crypto", test_crypto},
     {"test_wrapped_crypto", test_wrapped_crypto},

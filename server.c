@@ -581,7 +581,7 @@ static void parse_headercb(struct bufferevent *bev, void *ctx)
 		}
 	    }
 	} else
-	    resolve(context);
+	    resolve_dns(context);
 
 	break;
     default:
@@ -687,7 +687,7 @@ void handle_streamcb(struct bufferevent *bev, void *ctx)
     }
 }
 
-void resolve(struct e_context_s *context)
+void resolve_dns(struct e_context_s *context)
 {
     struct evutil_addrinfo hints;
 
@@ -699,11 +699,11 @@ void resolve(struct e_context_s *context)
     hints.ai_protocol = IPPROTO_UDP;
     hints.ai_flags = EVUTIL_AI_CANONNAME;
 
-    if (!evdns_getaddrinfo(dns_base, context->domain, NULL, &hints, resolvecb, context))
+    if (!evdns_getaddrinfo(dns_base, context->domain, NULL, &hints, resolve_dnscb, context))
 	context->st = e_destroy;
 }
 
-void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr)
+void resolve_dnscb(int errcode, struct evutil_addrinfo *ai, void *ptr)
 {
     struct sockaddr_in *sin;
     struct e_context_s *context = ptr;

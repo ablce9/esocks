@@ -42,10 +42,10 @@ struct e_context_s {
 };
 
 void e_start_server(void);
-void resolve(struct e_context_s *s);
+void resolve_dns(struct e_context_s *s);
 void err_writecb(struct bufferevent *bev, void *ctx);
 void close_on_finished_writecb(struct bufferevent *bev, void *ctx);
-void resolvecb(int errcode, struct evutil_addrinfo *ai, void *ptr);
+void resolve_dnscb(int errcode, struct evutil_addrinfo *ai, void *ptr);
 void fast_streamcb(struct bufferevent *bev, void *ctx);
 void handle_streamcb(struct bufferevent *bev, void *ctx);
 void evs_setcb_for_local(struct bufferevent *bev, void *context);
